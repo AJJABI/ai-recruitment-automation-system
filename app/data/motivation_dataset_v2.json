@@ -1,0 +1,183 @@
+{
+  "version": "v2_final",
+  "nb_total": 22,
+  "metrics": {
+    "mae": 13.6,
+    "fp": 1,
+    "fn": 1,
+    "tp": 3,
+    "tn": 14,
+    "precision_at_3": 1.0,
+    "mae_ok": true
+  },
+  "dataset": [
+    {
+      "id": "D01",
+      "type": "bon_match",
+      "score_agent": 88,
+      "score_humain": 85,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D02",
+      "type": "bon_match_en",
+      "score_agent": 90,
+      "score_humain": 82,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D03",
+      "type": "bon_match_fr",
+      "score_agent": 87,
+      "score_humain": 83,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D04",
+      "type": "junior_bc",
+      "score_agent": 65,
+      "score_humain": 55,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D05",
+      "type": "net_senior",
+      "score_agent": 40,
+      "score_humain": 35,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D06",
+      "type": "sap_erp",
+      "score_agent": 40,
+      "score_humain": 25,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D07",
+      "type": "data_science",
+      "score_agent": 20,
+      "score_humain": 10,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D08",
+      "type": "devops",
+      "score_agent": 12,
+      "score_humain": 8,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D09",
+      "type": "cyber",
+      "score_agent": 20,
+      "score_humain": 8,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D10",
+      "type": "rh",
+      "score_agent": 4,
+      "score_humain": 2,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D11",
+      "type": "generique",
+      "score_agent": 30,
+      "score_humain": 15,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D12",
+      "type": "ultra_courte",
+      "score_agent": 4,
+      "score_humain": 0,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D13",
+      "type": "frontend",
+      "score_agent": 20,
+      "score_humain": 12,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D14",
+      "type": "cloud",
+      "score_agent": 20,
+      "score_humain": 15,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D15",
+      "type": "nav_ancien",
+      "score_agent": 59,
+      "score_humain": 40,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D16",
+      "type": "consultant_fonc",
+      "score_agent": 46,
+      "score_humain": 50,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D17",
+      "type": "junior_motive",
+      "score_agent": 68,
+      "score_humain": 65,
+      "pertinent_humain": true
+    },
+    {
+      "id": "D18",
+      "type": "senior_nav_only",
+      "score_agent": 62,
+      "score_humain": 35,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D19",
+      "type": "odoo_erp",
+      "score_agent": 34,
+      "score_humain": 30,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D20",
+      "type": "chatgpt_parfait",
+      "score_agent": 85,
+      "score_humain": 20,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D21",
+      "type": "backend_senior",
+      "score_agent": 61,
+      "score_humain": 38,
+      "pertinent_humain": false
+    },
+    {
+      "id": "D22",
+      "type": "bc_lettre_nulle",
+      "score_agent": 11,
+      "score_humain": 60,
+      "pertinent_humain": true
+    }
+  ],
+  "problems": {
+    "fp_critical": [
+      "D20 ChatGPT parfait"
+    ],
+    "fn_critical": [
+      "D22 BC senior lettre vide"
+    ],
+    "overscored": [
+      "D18 NAV sans AL",
+      "D21 .NET senior",
+      "D15 NAV ancien"
+    ],
+    "resolution": "matching_agent avec embeddings résoudra ces cas"
+  }
+}

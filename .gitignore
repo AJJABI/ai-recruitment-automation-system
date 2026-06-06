@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+.env
+*.env
+.pytest_cache/
+coverage.xml
+htmlcov/
+*.cover
+*.py,cover
+*.log
+*.sqlite3
+*.db
+instance/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Garde seulement UN lock file si tu travailles en équipe
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+dist/
+build/
+.vite/
+public/dist/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp
+*.swo
+# Uploads
+uploads/
+
+# Fichiers générés
+*.pdf
+app/dynamix-recruitment-495902-eadcc343d4b2.json

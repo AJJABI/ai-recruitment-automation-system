@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+  --radius: 0.75rem;
+
+  /* Variables requises par ApplicationForm */
+  --primary: 222 89% 55%;
+  --muted: 210 20% 94%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 20% 94%;
+  --border: 214 32% 88%;
+  --foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    background-color: #f8fafc;
+    color: #1e293b;
+  }
+}
+
+@layer components {
+  /* ApplicationForm */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  }
+
+  .shimmer-bg {
+    background: linear-gradient(135deg, hsl(222, 89%, 55%), hsl(199, 89%, 50%));
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(222, 89%, 55%), hsl(199, 89%, 50%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .upload-zone {
+    border: 2px dashed hsl(var(--border));
+    background: rgba(255, 255, 255, 0.5);
+    transition: all 0.2s ease;
+  }
+
+  .upload-zone:hover,
+  .upload-zone.drag-over {
+    border-color: hsl(var(--primary));
+    background: hsl(222 89% 55% / 0.05);
+  }
+
+  .input-field {
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+}
