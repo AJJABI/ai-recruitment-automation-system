@@ -15,7 +15,7 @@ import bgWave   from "../assets/imagee.png";
 import logoImg  from "../assets/logoo.png";
 import RHSidebar from "./RHSidebar";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 function getToken() { return localStorage.getItem("access_token") ?? ""; }
 function authHeaders() { return { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" }; }
 

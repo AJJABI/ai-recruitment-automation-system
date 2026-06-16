@@ -8,7 +8,7 @@ import {
   X, File, Sparkles, ChevronRight, Loader2,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ACCEPTED_TYPES = [
