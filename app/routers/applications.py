@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
 from app.models import Application, CVProfile, Job, IA_Log, RH_Feedback, ApplicationEvent,User   
+from app import models
 from app.schemas import FeedbackCreate, FeedbackResponse, EvaluateTestInput
 from app.agents.cv_agent.cv_parser import run_cv_parser
 from app.agents.motivation_agent.motivation_agent import run_motivation_agent
