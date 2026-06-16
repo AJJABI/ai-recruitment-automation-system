@@ -886,9 +886,7 @@ export default function JobDetail() {
                               Scheduled test — send on {new Date(sendDate).toLocaleString("en-US", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                             </span>
                           </div>
-                          <p style={{ fontSize: 11, color: "#64748b", marginLeft: 23 }}>
-                            {sentCount} Candidate(s) automatically notified · n8n manages the sending ⏳
-                          </p>
+                          
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px solid rgba(240,235,255,0.7)" }}>

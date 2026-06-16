@@ -199,15 +199,13 @@ function initials(name: string) {
 }
 
 function isDone(status: string): boolean {
-  return ["INTERVIEW_SCHEDULED", "INTERVIEW_DONE", "MANAGER_VALIDATED",
-          "MANAGER_TO_DEEPEN", "MANAGER_REJECTED", "ACCEPTED"].includes(status);
+  return ["INTERVIEW_SCHEDULED", "INTERVIEW_DONE", 
+           "MANAGER_REJECTED", "ACCEPTED"].includes(status);
 }
 
 function statusLabel(status: string): { label: string; color: string; bg: string; border: string } {
   const map: Record<string, { label: string; color: string; bg: string; border: string }> = {
-    MANAGER_VALIDATED:   { label: "Validated",  color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
     MANAGER_REJECTED:    { label: "Rejected",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
-    MANAGER_TO_DEEPEN:   { label: "Dig deeper", color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
     INTERVIEW_DONE:      { label: "Done",        color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
     INTERVIEW_SCHEDULED: { label: "Scheduled",  color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
     ACCEPTED:            { label: "Accepted",   color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd" },
@@ -332,7 +330,7 @@ export default function CandidateList() {
 
   // Pending Review : en attente d'action
   const pendingReview  = candidates.filter(c =>
-    ["PENDING", "PRESELECTED", "TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED", "TECH_EVALUATED"].includes(c.status_v2)
+    ["PENDING", "PRESELECTED", "TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED"].includes(c.status_v2)
   ).length;
 
   const preselected  = candidates.filter(c => c.group === "PRESELECTED");

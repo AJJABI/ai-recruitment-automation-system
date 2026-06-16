@@ -72,6 +72,8 @@ interface TestState {
     errorMsg: string;
     testId: string;
     applicationId: string;
+    candidateEmail: string;
+    jobTitle: string;
 }
 
 type Action =
@@ -90,7 +92,8 @@ type Action =
     | { type: "TICK_QUESTION" }
     | { type: "SUBMIT" }
     | { type: "SET_DONE" }
-    | { type: "SET_ALREADY_SUBMITTED" };
+    | { type: "SET_ALREADY_SUBMITTED" }
+    | { type: "SET_META"; candidateEmail: string; jobTitle: string };
 
 function pad(n: number) {
     return String(n).padStart(2, "0");
@@ -118,6 +121,8 @@ function getInitialState(): TestState {
         errorMsg: "",
         testId: "",
         applicationId: "",
+        candidateEmail: "",
+        jobTitle: "",
     };
 }
 
@@ -217,6 +222,9 @@ function reducer(state: TestState, action: Action): TestState {
         case "SET_ALREADY_SUBMITTED":
             return { ...state, status: "already_submitted" };
 
+        case "SET_META":
+            return { ...state, candidateEmail: action.candidateEmail, jobTitle: action.jobTitle };
+
         default:
             return state;
     }
@@ -292,6 +300,20 @@ export default function TestPage() {
                     };
                 });
                 dispatch({ type: "SET_QUESTIONS", questions: qs, testId, applicationId });
+
+                // Récupérer email candidat + job title pour les emails n8n
+                fetch(`${BASE}/applications/${applicationId}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
+                        if (data) {
+                            dispatch({
+                                type: "SET_META",
+                                candidateEmail: data.candidate_email ?? data.email ?? "",
+                                jobTitle: data.job_title ?? data.job?.title ?? "",
+                            });
+                        }
+                    })
+                    .catch(() => {}); // non-bloquant
             })
             .catch((e) => dispatch({ type: "SET_ERROR", msg: e.message }));
     }, [applicationId, testId]);
@@ -420,16 +442,17 @@ export default function TestPage() {
                 test_id:        testId,
                 answers:        state.questions.map(q => ({
                     question_id: q.id,
-                    // MCQ : envoyer le texte complet de l'option (pas la lettre A/B/C/D)
-                    // Le backend compare directement avec correct_answer stocké en DB
                     answer: q.type === "MCQ" && state.answers[q.id] !== undefined
                         ? (q.options?.[parseInt(state.answers[q.id])] ?? "")
                         : (state.answers[q.id] ?? ""),
                 })),
-                application_id: Number(applicationId),
-                violations:     state.violations,
-                violation_flag: forcedByViolation ? "VIOLATION_3" : null,
-                forced_submit:  forcedByViolation,
+                application_id:  Number(applicationId),
+                violations:      state.violations,
+                violation_flag:  forcedByViolation ? "VIOLATION_3" : null,
+                forced_submit:   forcedByViolation,
+                candidate_email: state.candidateEmail,
+                candidate_name:  state.candidateName,
+                job_title:       state.jobTitle,
             }),
         }).catch(() => {
             setN8nError(true);

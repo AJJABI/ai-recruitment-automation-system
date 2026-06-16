@@ -235,7 +235,7 @@ class ManagerReviewCreate(BaseModel):
 
     @validator("decision")
     def validate_decision(cls, v):
-        allowed = {"RECOMMANDÉ", "À_REVOIR", "REFUSÉ"}
+        allowed = {"RECOMMANDÉ", "REFUSÉ"}
         if v not in allowed:
             raise ValueError(f"Décision invalide. Valeurs acceptées : {allowed}")
         return v

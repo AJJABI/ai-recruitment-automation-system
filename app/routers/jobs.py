@@ -59,7 +59,8 @@ def create_job(
 
 @router.get("/")
 def get_jobs(db: Session = Depends(get_db)):
-    return db.query(models.Job).all()
+    """Retourne uniquement les jobs ouverts (closed_at IS NULL)."""
+    return db.query(models.Job).filter(models.Job.closed_at == None).all()
 
 
 # ============================================================
@@ -91,7 +92,7 @@ def rh_dashboard(
             "test_envoye":         sum(1 for a in applications if a.status_v2 in ["TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED"]),
             "entretien_planifie":  sum(1 for a in applications if a.status_v2 in ["MEET_PENDING", "INTERVIEW_SCHEDULED", "INTERVIEW_DONE"]),
             "acceptes":            sum(1 for a in applications if a.status_v2 == "ACCEPTED"),
-            "rejetes":             sum(1 for a in applications if a.status_v2 in ["REJECTED_AUTO", "REJECTED_FINAL", "REJECTED_TECH"]),
+            "rejetes":             sum(1 for a in applications if a.status_v2 in ["REJECTED_AUTO", "REJECTED_FINAL", "REJECTED_TECH", "MANAGER_REJECTED"]),
             "waiting_meet_count":  sum(1 for a in applications if a.status_v2 == "WAITING_MEET"),
         }
 
@@ -142,7 +143,7 @@ def manager_dashboard(
         if not job:
             continue
 
-        REJECTED_STATUSES = ["REJECTED_AUTO", "REJECTED_FINAL", "REJECTED"]
+        REJECTED_STATUSES = ["REJECTED_AUTO", "REJECTED_FINAL", "REJECTED", "MANAGER_REJECTED"]
         all_applications = db.query(models.Application).filter(
             models.Application.job_id == job.id,
         ).all()
@@ -152,7 +153,7 @@ def manager_dashboard(
             "rejected":         sum(1 for a in all_applications if a.status_v2 in REJECTED_STATUSES),
             "interviews_done":  sum(1 for a in all_applications if a.status_v2 == "INTERVIEW_DONE"),
             "pending_review":   sum(1 for a in all_applications if a.status_v2 in [
-                "PRESELECTED", "TECH_EVALUATED", "INTERVIEW_ELIGIBLE", "INTERVIEW_SCHEDULED"
+                "PRESELECTED", "INTERVIEW_ELIGIBLE", "INTERVIEW_SCHEDULED"
             ]),
         }
 

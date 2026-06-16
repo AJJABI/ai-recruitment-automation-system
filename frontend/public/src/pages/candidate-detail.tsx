@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Briefcase, Users, MessageSquare,
   ArrowLeft, Video, Code, Save,
-  CheckCircle2, XCircle, AlertTriangle,
+  CheckCircle2, XCircle, 
   ExternalLink, AlertCircle, LogOut,
 } from "lucide-react";
 import bgWave  from "../assets/imagee.png";
@@ -32,7 +32,6 @@ const AVATAR_PALETTE = ["#0d9488", "#0e7490", "#0369a1", "#7c3aed", "#065f46", "
 
 const DECISIONS = [
   { value: "VALIDÉ",        label: "Validate",     desc: "Move to next stage",             icon: CheckCircle2,  color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", activeBg: "#dcfce7" },
-  { value: "À_APPROFONDIR", label: "Dig deeper",   desc: "Needs further evaluation",       icon: AlertTriangle, color: "#d97706", bg: "#fffbeb", border: "#fde68a", activeBg: "#fef3c7" },
   { value: "NON_RETENU",    label: "Not retained", desc: "Not suitable for this position", icon: XCircle,       color: "#dc2626", bg: "#fef2f2", border: "#fca5a5", activeBg: "#fee2e2" },
 ];
 
@@ -365,7 +364,8 @@ function TestAnswersSection({ testResults }: { testResults: any }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RHReport {
-  status?: string;
+  status?    : string;
+  status_v2? : string;
   score_final?: number;
   score_matching?: number;
   score_motivation?: number;
@@ -405,6 +405,7 @@ export default function CandidateDetail() {
   const [feedback,    setFeedback]    = useState("");
   const [recommendation, setRecommendation] = useState("VALIDÉ");
   const [submitting,  setSubmitting]  = useState(false);
+  const [submitted,   setSubmitted]   = useState(false);
   const [toast,       setToast]       = useState<{ msg: string; type: "ok" | "err" } | null>(null);
 
   const activeRec   = DECISIONS.find(d => d.value === recommendation)!;
@@ -463,6 +464,7 @@ export default function CandidateDetail() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error((data?.detail as { message?: string })?.message ?? `Error ${res.status}`);
+      setSubmitted(true);
       setToast({ msg: `Evaluation submitted — ${cv?.full_name ?? "Candidate"} marked ${recommendation.replace("_", " ").toLowerCase()}.`, type: "ok" });
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : "Submission error.", type: "err" });
@@ -470,6 +472,11 @@ export default function CandidateDetail() {
       setSubmitting(false);
     }
   };
+
+  // Verrouiller le formulaire si déjà soumis dans cette session
+  // OU si le candidat a déjà une décision enregistrée (ACCEPTED ou REJECTED_FINAL)
+  const alreadyDecided = ["ACCEPTED", "REJECTED_FINAL"].includes(report?.status_v2 ?? "");
+  const isLocked       = submitted || alreadyDecided;
 
   return (
     <>
@@ -784,6 +791,11 @@ export default function CandidateDetail() {
                     {/* Decision buttons */}
                     <div>
                       <label style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase" as const, color: TEXT_MUTED, display: "block", marginBottom: 8 }}>Decision</label>
+                      {isLocked && (
+                        <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                          <CheckCircle2 size={13} /> Evaluation already submitted
+                        </div>
+                      )}
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {DECISIONS.map(dec => {
                           const isActive = recommendation === dec.value;
@@ -791,14 +803,14 @@ export default function CandidateDetail() {
                             <button
                               key={dec.value}
                               type="button"
-                              onClick={() => role === "MANAGER" && setRecommendation(dec.value)}
+                              onClick={() => role === "MANAGER" && !isLocked && setRecommendation(dec.value)}
                               style={{
                                 width: "100%", display: "flex", alignItems: "center", gap: 10,
                                 padding: "10px 12px", borderRadius: 10, textAlign: "left",
                                 border: `1px solid ${isActive ? dec.border : "#e2e8f0"}`,
                                 background: isActive ? dec.activeBg : "rgba(248,250,252,0.9)",
-                                cursor: role === "MANAGER" ? "pointer" : "not-allowed",
-                                opacity: role !== "MANAGER" ? 0.6 : 1,
+                                cursor: role === "MANAGER" && !isLocked ? "pointer" : "not-allowed",
+                                opacity: role !== "MANAGER" || isLocked ? 0.6 : 1,
                                 transition: "all 0.15s",
                               }}
                             >
@@ -825,13 +837,13 @@ export default function CandidateDetail() {
                         placeholder="Notes for the interview panel…"
                         value={feedback}
                         onChange={e => setFeedback(e.target.value)}
-                        disabled={role !== "MANAGER"}
+                        disabled={role !== "MANAGER" || isLocked}
                         style={{
                           width: "100%", minHeight: 90, padding: "10px 12px", borderRadius: 10,
                           border: "1px solid #e2e8f0", background: "rgba(248,250,252,0.9)",
                           fontSize: 13, color: TEXT_MAIN, resize: "none", outline: "none",
                           fontFamily: "inherit", boxSizing: "border-box",
-                          opacity: role !== "MANAGER" ? 0.5 : 1, transition: "border-color 0.15s",
+                          opacity: role !== "MANAGER" || isLocked ? 0.5 : 1, transition: "border-color 0.15s",
                         }}
                         onFocus={e => (e.currentTarget.style.borderColor = TEAL_BORDER)}
                         onBlur={e => (e.currentTarget.style.borderColor = "#e2e8f0")}
@@ -842,19 +854,19 @@ export default function CandidateDetail() {
                     {role === "MANAGER" ? (
                       <button
                         onClick={handleSubmit}
-                        disabled={submitting}
+                        disabled={submitting || isLocked}
                         style={{
                           width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
                           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                           fontSize: 13, fontWeight: 700, letterSpacing: "0.04em",
-                          cursor: submitting ? "not-allowed" : "pointer",
-                          background: activeRec.color, color: "#fff",
+                          cursor: submitting || isLocked ? "not-allowed" : "pointer",
+                          background: isLocked ? "#94a3b8" : activeRec.color, color: "#fff",
                           opacity: submitting ? 0.7 : 1, transition: "opacity 0.15s",
-                          boxShadow: `0 4px 16px ${activeRec.color}40`,
+                          boxShadow: isLocked ? "none" : `0 4px 16px ${activeRec.color}40`,
                         }}
                       >
                         <Save size={14} />
-                        {submitting ? "Submitting…" : "Submit Evaluation"}
+                        {submitting ? "Submitting…" : isLocked ? "Evaluation Submitted" : "Submit Evaluation"}
                       </button>
                     ) : (
                       <div style={{ textAlign: "center", fontSize: 11, color: TEXT_MUTED, padding: "6px 0" }}>

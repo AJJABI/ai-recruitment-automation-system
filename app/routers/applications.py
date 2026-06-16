@@ -1,4 +1,4 @@
-from fastapi import UploadFile, File, APIRouter, Depends, Form, HTTPException, BackgroundTasks, Request
+from fastapi import UploadFile, File, APIRouter, Depends, Form, HTTPException, BackgroundTasks, Request, Header
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -26,6 +26,10 @@ from app.circuit_breaker import n8n_breaker
 router = APIRouter()
 
 os.makedirs("uploads", exist_ok=True)
+
+# Secret partagé entre n8n et FastAPI pour les appels machine-to-machine.
+# Même valeur que dans tests.py — définie dans .env via N8N_SECRET.
+N8N_SECRET = os.getenv("N8N_SECRET", "mon-secret-n8n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +191,8 @@ async def apply_job(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if job.closed_at:
+        raise HTTPException(status_code=400, detail="This job offer is closed and no longer accepting applications.")
 
     # ── Vérifier si candidat a déjà postulé à ce job ─────────────────────────
     existing = db.query(Application).filter(
@@ -470,11 +476,11 @@ def rh_final_ranking(
 
     apps = db.query(Application).filter(
         Application.job_id   == job_id,
-        Application.status_v2.in_(["ACCEPTED", "TECH_EVALUATED"]),
+        Application.status_v2.in_(["ACCEPTED", "HIRED", "POSITION_FILLED"]),
     ).all()
 
     groupe_1 = []
-    groupe_2 = []
+    groupe_2 = []  # toujours vide — conservé pour compatibilité frontend
 
     for app in apps:
         cv = db.query(CVProfile).filter(CVProfile.application_id == app.id).first()
@@ -497,17 +503,15 @@ def rh_final_ranking(
             "status_v2"       : app.status_v2,
         }
 
-        if app.status_v2 == "ACCEPTED":
-            groupe_1.append(candidat)
-        else:
-            groupe_2.append(candidat)
+        groupe_1.append(candidat)
 
-    groupe_1.sort(key=lambda x: x["score_global"], reverse=True)
-    groupe_2.sort(key=lambda x: x["score_global"], reverse=True)
+    # HIRED en premier, puis POSITION_FILLED, puis ACCEPTED — par score_global à égalité
+    STATUS_ORDER = {"HIRED": 0, "ACCEPTED": 1, "POSITION_FILLED": 2}
+    groupe_1.sort(key=lambda x: (STATUS_ORDER.get(x["status_v2"], 9), -x["score_global"]))
 
     return {
         "job_id"   : job_id,
-        "groupe_1" : {"label": "Validated",       "candidats": groupe_1},
+        "groupe_1" : {"label": "Validated", "candidats": groupe_1},
         "groupe_2" : {"label": "To review", "candidats": groupe_2},
     }
 
@@ -523,7 +527,7 @@ def get_applications_by_job(
 
     IN_PROGRESS = {
         "TEST_READY", "TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED",
-        "TECHNICAL_REVIEW_PENDING", "INTERVIEW_ELIGIBLE", "TECH_EVALUATED",
+        "TECHNICAL_REVIEW_PENDING", "INTERVIEW_ELIGIBLE",
         "INTERVIEW_SCHEDULED", "INTERVIEW_DONE", "ACCEPTED",
     }
 
@@ -579,8 +583,10 @@ def get_applications_by_job(
 def get_waiting_candidates(
     job_id       : int,
     db           : Session = Depends(get_db),
-    current_user = Depends(require_role("RH", "MANAGER")),
+    x_n8n_secret : str     = Header(...),
 ):
+    if x_n8n_secret != N8N_SECRET:
+        raise HTTPException(status_code=401, detail="Non autorisé")
     apps = db.query(Application).filter(
         Application.job_id    == job_id,
         Application.status_v2 == "WAITING_MEET",
@@ -615,8 +621,11 @@ def get_waiting_candidates(
 def promote_candidate(
     application_id : int,
     db             : Session = Depends(get_db),
-    current_user   = Depends(require_role("RH", "MANAGER")),
+    x_n8n_secret   : str     = Header(...),
 ):
+    if x_n8n_secret != N8N_SECRET:
+        raise HTTPException(status_code=401, detail="Non autorisé")
+
     application = db.query(Application).filter(Application.id == application_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -642,20 +651,10 @@ def promote_candidate(
     db.add(ApplicationEvent(
         application_id = application_id,
         event          = "PROMOTED_TO_MEET_PENDING",
-        actor          = "rh",
-        actor_id       = current_user.id,
+        actor          = "system",
         details        = {"old_status": "WAITING_MEET", "new_status": "MEET_PENDING"},
     ))
     db.commit()
-
-    # Notification RH
-    create_notification(
-        db      = db,
-        user_id = current_user.id,
-        message = f"⬆️ {candidate_name} promoted — {job_title}",
-        type    = "info",
-        link    = f"/rh/ranking/{application.job_id}",
-    )
 
     return {
         "message"        : f"{candidate_name} promoted to MEET_PENDING",
@@ -798,8 +797,10 @@ def request_expand(
 def get_matched_candidates(
     job_id       : int,
     db           : Session = Depends(get_db),
-    current_user = Depends(require_role("RH", "MANAGER")),
+    x_n8n_secret : str     = Header(...),
 ):
+    if x_n8n_secret != N8N_SECRET:
+        raise HTTPException(status_code=401, detail="Non autorisé")
     apps = db.query(Application).filter(
         Application.job_id    == job_id,
         Application.status_v2 == "PENDING",
@@ -836,8 +837,11 @@ def get_matched_candidates(
 def promote_matched_candidate(
     application_id : int,
     db             : Session = Depends(get_db),
-    current_user   = Depends(require_role("RH", "MANAGER")),
+    x_n8n_secret   : str     = Header(...),
 ):
+    if x_n8n_secret != N8N_SECRET:
+        raise HTTPException(status_code=401, detail="Non autorisé")
+
     application = db.query(Application).filter(Application.id == application_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -863,7 +867,6 @@ def promote_matched_candidate(
         application_id = application_id,
         event          = "PROMOTED_TO_PRESELECTED",
         actor          = "system",
-        actor_id       = current_user.id,
         details        = {
             "old_status" : "MATCHED",
             "new_status" : "PRESELECTED",
@@ -1518,6 +1521,7 @@ async def run_motivation_endpoint(
             job_skills      = job.skills_required if job else "",
             job_company     = job.company         if job else "",
             application_id  = application_id,
+            job_lang        = getattr(job, "lang", None) or "fr",
             db              = db,
         )
         result = result or {}
@@ -1808,7 +1812,9 @@ def submit_manager_review(
     db.add(review)
 
     # Mettre à jour le status
-    application.status_v2 = "TECH_EVALUATED"
+    # RECOMMANDÉ → ACCEPTED (validé, passe au RH)
+    # REFUSÉ     → REJECTED_FINAL (déjà appliqué ci-dessous)
+    application.status_v2 = "ACCEPTED"
 
     # Appliquer la logique de décision
     if payload.decision == "REFUSÉ":
@@ -1946,22 +1952,20 @@ class ManagerDecisionInput(BaseModel):
     test_id n'est plus obligatoire (legacy n8n) — on accepte aussi manager_decision direct.
     """
     test_id          : Optional[str] = None
-    manager_decision : str           # "VALIDÉ" | "À_APPROFONDIR" | "NON_RETENU"
+    manager_decision : str           # "VALIDÉ" | "NON_RETENU"
     manager_note     : Optional[str] = None
 
 
 # Mapping décision manager → status_v2 (valeurs dans l'enum application_status_v2)
 DECISION_TO_STATUS = {
-    "VALIDÉ"        : "ACCEPTED",        # Retenu — passe au RH
-    "À_APPROFONDIR" : "TECH_EVALUATED",  # Évalué — RH décide la suite
-    "NON_RETENU"    : "REJECTED_FINAL",  # Rejeté définitivement
+    "VALIDÉ"     : "ACCEPTED",       # Retenu — passe au RH
+    "NON_RETENU" : "REJECTED_FINAL", # Rejeté définitivement
 }
 
 # Mapping décision manager → enum manager_decision_v2 (valeurs PostgreSQL)
 DECISION_TO_REVIEW = {
-    "VALIDÉ"        : "RECOMMENDED",
-    "À_APPROFONDIR" : "TO_REVIEW",
-    "NON_RETENU"    : "REFUSED",
+    "VALIDÉ"     : "RECOMMENDED",
+    "NON_RETENU" : "REFUSED",
 }
 
 # URL webhook n8n — workflow "Manager Decision"
@@ -1979,9 +1983,8 @@ def submit_manager_decision(
     Manager soumet sa décision finale depuis CandidateDetail.
 
     Décision → status_v2 :
-      VALIDÉ        → ACCEPTED       + données RH dans réponse
-      À_APPROFONDIR → TECH_EVALUATED + données RH dans réponse
-      NON_RETENU    → REJECTED_FINAL + webhook n8n → email rejet candidat
+      VALIDÉ      → ACCEPTED       + notification RH
+      NON_RETENU  → REJECTED_FINAL + webhook n8n → email rejet candidat
     """
     # ── 1. Vérifier que la candidature existe ─────────────────────────────────
     application = db.query(Application).filter(
@@ -1991,7 +1994,7 @@ def submit_manager_decision(
         raise HTTPException(status_code=404, detail="Application not found")
 
     # ── 2. Valider la décision ────────────────────────────────────────────────
-    valid_decisions = {"VALIDÉ", "À_APPROFONDIR", "NON_RETENU"}
+    valid_decisions = {"VALIDÉ", "NON_RETENU"}
     if payload.manager_decision not in valid_decisions:
         raise HTTPException(
             status_code=422,
@@ -2116,34 +2119,19 @@ def submit_manager_decision(
             "email_sent"     : True,
         }
 
-    # CAS VALIDÉ ou À_APPROFONDIR → notifier le RH + données dans la réponse
-    # Récupérer tous les RH pour notifier
+    # CAS VALIDÉ → données RH dans la réponse
     rh_users = db.query(User).filter(User.role == "RH").all()
     for rh in rh_users:
-        if payload.manager_decision == "VALIDÉ":
-            create_notification(
-                db,
-                user_id = rh.id,
-                message = f"{candidate_name} has been approved by the manager for the '{job_title}' role",
-                type    = "success",
-                link    = f"/candidates/{application.job_id}/{application_id}",
-            )
-        else:  # À_APPROFONDIR
-            create_notification(
-                db,
-                user_id = rh.id,
-                message = f"{candidate_name} needs further review for the '{job_title}' role",
-                type    = "warning",
-                link    = f"/candidates/{application.job_id}/{application_id}",
-            )
+        create_notification(
+            db,
+            user_id = rh.id,
+            message = f"{candidate_name} has been approved by the manager for the '{job_title}' role",
+            type    = "success",
+            link    = f"/candidates/{application.job_id}/{application_id}",
+        )
 
-    # CAS VALIDÉ ou À_APPROFONDIR → données RH dans la réponse
     return {
-        "message"        : (
-            "Candidate validated. File forwarded to HR."
-            if payload.manager_decision == "VALIDÉ"
-            else "Candidate needs further review. File forwarded to HR."
-        ),
+        "message"        : "Candidate validated. File forwarded to HR.",
         "application_id" : application_id,
         "candidate_name" : candidate_name,
         "decision"       : payload.manager_decision,
@@ -2158,7 +2146,7 @@ def submit_manager_decision(
             "score_final"     : float(application.score_final    or 0),
             "score_technique" : float(application.score_technique or 0),
             "signal_final"    : application.signal_final or "medium",
-            "priority_group"  : 1 if payload.manager_decision == "VALIDÉ" else 2,
+            "priority_group"  : 1,
         },
     }
 
@@ -2240,21 +2228,19 @@ def rh_final_ranking(
     current_user = Depends(require_role("RH")),
 ):
     """
-    Retourne les candidats classés en 2 groupes pour le RH :
-    - Groupe 1 : VALIDÉ par manager (ACCEPTED)
-    - Groupe 2 : À_APPROFONDIR par manager (TECH_EVALUATED)
-    Chaque groupe classé par score_global décroissant.
+    Retourne les candidats validés par le manager (ACCEPTED) classés par score_global.
     score_global = 0.60 × score_final + 0.40 × technical_score
+    groupe_2 est toujours vide (Dig Deeper supprimé).
     """
     from app.models import ManagerReview
 
     apps = db.query(Application).filter(
         Application.job_id   == job_id,
-        Application.status_v2.in_(["ACCEPTED", "TECH_EVALUATED"]),
+        Application.status_v2.in_(["ACCEPTED", "HIRED", "POSITION_FILLED"]),
     ).all()
 
     groupe_1 = []
-    groupe_2 = []
+    groupe_2 = []  # toujours vide — conservé pour compatibilité frontend
 
     for app in apps:
         cv = db.query(CVProfile).filter(CVProfile.application_id == app.id).first()
@@ -2277,14 +2263,11 @@ def rh_final_ranking(
             "status_v2"       : app.status_v2,
         }
 
-        if app.status_v2 == "ACCEPTED":
-            groupe_1.append(candidat)
-        else:
-            groupe_2.append(candidat)
+        groupe_1.append(candidat)
 
-    # Classer chaque groupe par score_global décroissant
-    groupe_1.sort(key=lambda x: x["score_global"], reverse=True)
-    groupe_2.sort(key=lambda x: x["score_global"], reverse=True)
+    # HIRED en premier, puis ACCEPTED, puis POSITION_FILLED — par score_global à égalité
+    STATUS_ORDER = {"HIRED": 0, "ACCEPTED": 1, "POSITION_FILLED": 2}
+    groupe_1.sort(key=lambda x: (STATUS_ORDER.get(x["status_v2"], 9), -x["score_global"]))
 
     return {
         "job_id"   : job_id,

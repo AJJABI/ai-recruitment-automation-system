@@ -333,7 +333,13 @@ def generate_booking_tokens(
     expires_at = last_slot.scheduled_at if last_slot else datetime.utcnow() + timedelta(days=2)
 
     tokens_created = []
+    job            = db.query(models.Job).filter(models.Job.id == job_id).first()
+    job_title      = job.title if job else ""
+
     for app in preselected:
+        cv             = db.query(models.CVProfile).filter(models.CVProfile.application_id == app.id).first()
+        candidate_name = cv.full_name if cv else app.candidate_email
+
         existing = db.query(models.BookingToken).filter(
             models.BookingToken.application_id == app.id,
             models.BookingToken.used == False
@@ -344,6 +350,8 @@ def generate_booking_tokens(
             tokens_created.append({
                 "application_id"  : app.id,
                 "candidate_email" : app.candidate_email,
+                "candidate_name"  : candidate_name,
+                "job_title"       : job_title,
                 "token"           : existing.token,
                 "link"            : f"http://localhost:5173/booking?token={existing.token}&job_id={job_id}",
                 "expires_at"      : existing.expires_at
@@ -363,6 +371,8 @@ def generate_booking_tokens(
         tokens_created.append({
             "application_id"  : app.id,
             "candidate_email" : app.candidate_email,
+            "candidate_name"  : candidate_name,
+            "job_title"       : job_title,
             "token"           : token.token,
             "link"            : f"http://localhost:5173/booking?token={token.token}&job_id={job_id}",
             "expires_at"      : token.expires_at
@@ -439,6 +449,78 @@ def reject_expired_candidate(
 
     db.commit()
     return {"message": "Candidate rejected", "application_id": token.application_id}
+
+
+# ============================================================
+# ENDPOINT N8N — ABSENCES À L'ENTRETIEN (NO-SHOW)
+# ⚠️ Doit rester AVANT tous les /slots/{slot_id}/... pour éviter conflit de route
+# ============================================================
+
+@router.get("/slots/no-show")
+def get_no_show_slots(db: Session = Depends(get_db)):
+    """
+    Appelé toutes les heures par n8n (Schedule Trigger).
+    Retourne les créneaux "booked" dont scheduled_at est dépassé
+    et qui concernent UNIQUEMENT la phase d'évaluation technique (round != "HR Round").
+
+    n8n appelle cet endpoint puis pour chaque résultat :
+      - PATCH /interviews/slots/{slot_id}/absent  → marque MANAGER_REJECTED + libère le créneau
+      - Envoie un email au candidat l'informant de son absence
+
+    Idempotent : les candidats déjà traités sont exclus du résultat pour éviter les doublons.
+
+    Fix 1 — round != "HR Round" :
+      Exclut les créneaux "Présentiel RH" (phase finale RH) du workflow no-show.
+      Ce workflow ne concerne que la phase d'évaluation technique manager.
+
+    Fix 2 — statuts étendus :
+      Exclut les candidats dont la décision manager a déjà été soumise
+      (ACCEPTED = "Validate"), même si
+      un ancien slot technique est encore "booked" et non nettoyé.
+    """
+    now = datetime.utcnow()
+
+    # Fix 1 : exclure les créneaux RH (round = "HR Round")
+    slots = db.query(models.Interview).filter(
+        models.Interview.status         == "booked",
+        models.Interview.scheduled_at   <  now,
+        models.Interview.round          != "HR Round",
+    ).all()
+
+    # Fix 2 : statuts exclus étendus
+    EXCLUDED_STATUSES = [
+        "MANAGER_REJECTED",  # déjà rejeté par ce workflow
+        "INTERVIEW_DONE",    # entretien marqué fait
+        "HIRED",             # embauché (statut final RH)
+        "REJECTED_FINAL",    # rejeté définitivement (NON_RETENU)
+        "POSITION_FILLED",   # poste pourvu
+        "ACCEPTED",          # validé par manager (VALIDÉ → passe au RH)
+    ]
+
+    result = []
+    for slot in slots:
+        # Vérifier si l'application est déjà traitée
+        app = db.query(models.Application).filter(
+            models.Application.candidate_email == slot.candidate_email
+        ).first()
+
+        if app and app.status_v2 in EXCLUDED_STATUSES:
+            continue
+
+        job = None
+        if slot.job_id:
+            job = db.query(models.Job).filter(models.Job.id == slot.job_id).first()
+
+        result.append({
+            "slot_id"         : slot.id,
+            "candidate_email" : slot.candidate_email,
+            "candidate_name"  : slot.candidate_name or slot.candidate_email,
+            "job_title"       : job.title if job else "—",
+            "job_id"          : slot.job_id,
+            "scheduled_at"    : slot.scheduled_at.isoformat() if slot.scheduled_at else None,
+        })
+
+    return {"count": len(result), "no_shows": result}
 
 
 # ============================================================
@@ -968,7 +1050,7 @@ def get_manager_today(
 
         awaiting = db.query(models.Application).filter(
             models.Application.job_id == job_id,
-            models.Application.status_v2.in_(["MANAGER_VALIDATED", "MANAGER_TO_DEEPEN"]),
+            models.Application.status_v2.in_(["ACCEPTED"]),
         ).all()
         for app in awaiting:
             cv = db.query(models.CVProfile).filter(models.CVProfile.application_id == app.id).first()

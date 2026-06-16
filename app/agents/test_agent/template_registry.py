@@ -234,6 +234,44 @@ TEMPLATES: dict[str, dict] = {
     },
 
     # ─────────────────────────────────────────────────────────────
+    # ERP / BUSINESS CENTRAL (AL, C/AL, Dynamics 365 BC, AppSource)
+    # ─────────────────────────────────────────────────────────────
+    "erp_bc": {
+        "mcq_patterns": [
+            "AL extension event subscription bug (OnBeforePost, OnAfterInsert subscriber conflict)",
+            "C/AL vs AL migration decision: when to rewrite a codeunit vs wrap it in an extension",
+            "Business Central data model issue: FlowField vs Normal field choice for a calculated total",
+            "AppSource extension validation failure cause (missing permission set, wrong object range)",
+            "TypeScript client consuming BC API: authentication error or OData filter mistake",
+            "JavaScript AL control add-in: communication failure between page and add-in",
+            "Azure DevOps pipeline for BC extension: build failure on AL compiler or app.json misconfiguration",
+            "Docker BC development container: sandbox vs OnPrem image selection for CI testing",
+            "ERP integration pattern: when to use API page vs web service vs integration event",
+            "Business Central SaaS constraint: operation forbidden in cloud (direct SQL, DotNet interop)",
+        ],
+        "open_patterns": [
+            "Design a BC extension for a complex business process with AppSource compliance constraint",
+            "Choose between API page integration and integration events for a third-party ERP connector with latency constraint",
+            "Diagnose a BC extension that passes local validation but fails in SaaS environment",
+            "Architect a reporting solution connecting BC SaaS data to Power BI with refresh and governance constraint",
+            "Handle a data migration from legacy C/AL customization to AL extension with zero-downtime constraint",
+        ],
+        "focus_areas": [
+            "AL extension architecture", "BC data model correctness",
+            "AppSource compliance", "SaaS vs OnPrem constraints",
+            "ERP integration patterns", "BC API and web services",
+        ],
+        "constraints": [
+            "must comply with AppSource validation rules",
+            "no direct SQL access in SaaS environment",
+            "object ID range limited to partner range 50000-99999",
+            "extension must not break on BC monthly updates",
+            "client has 200 concurrent BC users",
+            "go-live in 4 weeks with no downtime allowed",
+        ],
+    },
+
+    # ─────────────────────────────────────────────────────────────
     # DEFAULT — fallback générique si aucun domaine détecté
     # ─────────────────────────────────────────────────────────────
     "default": {
@@ -275,76 +313,136 @@ def select_template(skills: list[str], seniority: str = "mid") -> tuple[str, dic
     Retourne :
         (template_name, template_dict)
 
-    Logique de sélection (par priorité) :
-        1. Fullstack si skills frontend ET backend présents
-        2. Frontend si React/Vue/Angular/TypeScript présents
-        3. Backend si Node/Python/Java/Go + API présents
-        4. Data si SQL/Power BI/Python data présents
-        5. DevOps si Docker/Kubernetes/Terraform présents
-        6. Platform si Power Automate/SharePoint/Dynamics présents
-        7. Default si aucun match
+    Logique de sélection v2.0 — SCORING PAR DOMINANCE :
+    ════════════════════════════════════════════════════
+    Chaque skill contribue un score à son groupe métier.
+    Le groupe avec le score le plus élevé gagne → son template est sélectionné.
+    Cela évite que JS/TS écrase un profil ERP, DevOps, ou Data.
+
+    Poids des skills :
+      - Skills métier fort (AL, C/AL, BC SaaS, ERP…)    : poids 2
+      - Skills généralistes (JS, TS, Python, Docker…)    : poids 1
+
+    Groupes et templates associés :
+      erp_bc    → AL, C/AL, Business Central, ERP Consulting, AppSource
+      devops    → Docker, Kubernetes, Terraform, CI/CD, Ansible
+      data      → SQL, Power BI, Spark, dbt, Airflow, Tableau
+      platform  → Power Automate, SharePoint, Dynamics 365, Power Apps
+      frontend  → React, Vue, Angular, TypeScript (pur frontend)
+      backend   → Python, Java, Go, Node.js, FastAPI
+      fullstack → frontend + backend à égalité
+      default   → aucun groupe dominant
     """
-    skills_lower = {s.lower().strip() for s in skills}
+    skills_lower = [s.lower().strip() for s in skills]
+    skills_set   = set(skills_lower)
 
-    # ── Détection par groupe de skills ───────────────────────────
-    _FRONTEND_SKILLS = {
-        "react", "vue", "angular", "typescript", "javascript",
-        "html", "css", "next.js", "nextjs", "svelte", "nuxt",
+    # ── Définition des groupes avec poids ────────────────────────
+    # Chaque entrée : (skill, poids)
+    # Poids 2 = skill métier fort (ancre le profil)
+    # Poids 1 = skill généraliste (contribue mais ne domine pas seul)
+
+    _ERP_BC_SKILLS = {
+        "al": 2, "c/al": 2, "cal": 2, "business central": 2,
+        "business central saas": 2, "bc saas": 2, "appsource": 2,
+        "erp consulting": 2, "dynamics 365 business central": 2,
+        "navision": 2, "nav": 2, "microsoft dynamics bc": 2,
+        # skills techniques présents dans un profil BC → poids 1
+        "javascript": 1, "typescript": 1, "docker": 1,
+        "azure devops": 1, "power bi": 1, "power automate": 1,
     }
-    _BACKEND_SKILLS = {
-        "node", "node.js", "nodejs", "python", "fastapi", "django",
-        "flask", "java", "spring", "go", "golang", "c#", "asp.net",
-        ".net", "ruby", "rails", "express", "nestjs",
-    }
-    _DATA_SKILLS = {
-        "sql", "postgresql", "mysql", "t-sql", "tsql", "power bi",
-        "tableau", "dbt", "airflow", "spark", "databricks", "snowflake",
-        "pandas", "numpy", "data", "analytics", "bi",
-    }
+
     _DEVOPS_SKILLS = {
-        "docker", "kubernetes", "k8s", "terraform", "ansible",
-        "jenkins", "github actions", "gitlab ci", "helm", "linux",
-        "bash", "ci/cd", "devops", "aws", "gcp", "azure devops",
+        "docker": 2, "kubernetes": 2, "k8s": 2, "terraform": 2,
+        "ansible": 2, "helm": 2, "jenkins": 2, "github actions": 2,
+        "gitlab ci": 2, "ci/cd": 2, "devops": 2,
+        "linux": 1, "bash": 1, "aws": 1, "gcp": 1, "azure devops": 1,
+        "python": 1, "typescript": 1,
     }
+
+    _DATA_SKILLS = {
+        "sql": 2, "postgresql": 2, "mysql": 2, "t-sql": 2, "tsql": 2,
+        "power bi": 2, "tableau": 2, "dbt": 2, "airflow": 2,
+        "spark": 2, "databricks": 2, "snowflake": 2, "ssis": 2,
+        "pandas": 1, "numpy": 1, "python": 1, "data": 1,
+        "analytics": 1, "bi": 1,
+    }
+
     _PLATFORM_SKILLS = {
-        "power automate", "power apps", "sharepoint", "dynamics 365",
-        "dynamics", "microsoft 365", "office 365", "teams", "ssis",
-        "azure data factory", "power platform", "servicenow",
+        "power automate": 2, "power apps": 2, "sharepoint": 2,
+        "dynamics 365": 2, "dynamics": 2, "microsoft 365": 2,
+        "office 365": 2, "power platform": 2, "servicenow": 2,
+        "teams": 1, "azure data factory": 1,
     }
-    _API_SIGNALS = {"api", "rest", "graphql", "grpc", "microservices", "backend"}
 
-    has_frontend = bool(skills_lower & _FRONTEND_SKILLS)
-    has_backend  = bool(skills_lower & _BACKEND_SKILLS) or bool(skills_lower & _API_SIGNALS)
-    has_data     = bool(skills_lower & _DATA_SKILLS)
-    has_devops   = bool(skills_lower & _DEVOPS_SKILLS)
-    has_platform = bool(skills_lower & _PLATFORM_SKILLS)
+    _FRONTEND_SKILLS = {
+        "react": 2, "vue": 2, "angular": 2, "svelte": 2,
+        "next.js": 2, "nextjs": 2, "nuxt": 2,
+        "html": 1, "css": 1, "typescript": 1, "javascript": 1,
+    }
 
-    # ── Priorité 1 : Fullstack (frontend + backend) ───────────────
-    if has_frontend and has_backend:
+    _BACKEND_SKILLS = {
+        "python": 2, "java": 2, "go": 2, "golang": 2,
+        "c#": 2, "asp.net": 2, ".net": 2, "ruby": 2,
+        "fastapi": 2, "django": 2, "flask": 2, "spring": 2,
+        "node": 1, "node.js": 1, "nodejs": 1, "express": 1,
+        "nestjs": 1, "rails": 1, "typescript": 1, "javascript": 1,
+        "api": 1, "rest": 1, "graphql": 1, "microservices": 1,
+    }
+
+    # ── Calcul des scores par groupe ─────────────────────────────
+    def _score(group: dict) -> int:
+        return sum(weight for sk, weight in group.items() if sk in skills_set)
+
+    score_erp_bc   = _score(_ERP_BC_SKILLS)
+    score_devops   = _score(_DEVOPS_SKILLS)
+    score_data     = _score(_DATA_SKILLS)
+    score_platform = _score(_PLATFORM_SKILLS)
+    score_frontend = _score(_FRONTEND_SKILLS)
+    score_backend  = _score(_BACKEND_SKILLS)
+
+    scores = {
+        "erp_bc"  : score_erp_bc,
+        "devops"  : score_devops,
+        "data"    : score_data,
+        "platform": score_platform,
+        "frontend": score_frontend,
+        "backend" : score_backend,
+    }
+
+    # Log pour debug
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info(f"[template] Scores domaine : {scores} | skills={skills_lower}")
+
+    # ── Règle fullstack : frontend + backend proches et élevés ───
+    # Déclenché uniquement si aucun profil métier (erp/devops/data/platform)
+    # ne domine — évite fullstack sur un profil ERP qui a JS+TS
+    max_metier = max(score_erp_bc, score_devops, score_data, score_platform)
+    is_fullstack = (
+        max_metier < 3                          # aucun profil métier dominant
+        and score_frontend >= 2
+        and score_backend  >= 2
+        and abs(score_frontend - score_backend) <= 2   # scores proches
+    )
+
+    if is_fullstack:
+        _log.info("[template] → fullstack (frontend+backend équilibrés, pas de profil métier dominant)")
         return "fullstack", TEMPLATES["fullstack"]
 
-    # ── Priorité 2 : Frontend pur ─────────────────────────────────
-    if has_frontend:
-        return "frontend", TEMPLATES["frontend"]
+    # ── Sélection par score dominant ─────────────────────────────
+    # Ordre de priorité en cas d'égalité :
+    # erp_bc > devops > data > platform > frontend > backend
+    priority_order = ["erp_bc", "devops", "data", "platform", "frontend", "backend"]
 
-    # ── Priorité 3 : Backend pur ──────────────────────────────────
-    if has_backend:
-        return "backend", TEMPLATES["backend"]
+    best_name  = max(priority_order, key=lambda k: (scores[k], -priority_order.index(k)))
+    best_score = scores[best_name]
 
-    # ── Priorité 4 : Data / Analytics ────────────────────────────
-    if has_data:
-        return "data", TEMPLATES["data"]
+    if best_score == 0:
+        _log.info("[template] → default (aucun skill reconnu)")
+        return "default", TEMPLATES["default"]
 
-    # ── Priorité 5 : DevOps / Infrastructure ─────────────────────
-    if has_devops:
-        return "devops", TEMPLATES["devops"]
-
-    # ── Priorité 6 : Platform / Microsoft 365 ────────────────────
-    if has_platform:
-        return "platform", TEMPLATES["platform"]
-
-    # ── Fallback ──────────────────────────────────────────────────
-    return "default", TEMPLATES["default"]
+    _log.info(f"[template] → {best_name} (score={best_score})")
+    return best_name, TEMPLATES[best_name]
 
 
 def build_template_guidance(

@@ -477,25 +477,44 @@ def _check_skills_overlap(letter_text: str, job_skills: str) -> dict:
     found   = []
     negated = []
     for skill in skills_raw:
-        words = [w for w in skill.split() if len(w) > 3]
-        if not words:
-            continue
+        # BUG-OVERLAP FIX : le filtre len(w) > 3 excluait les skills courts comme
+        # "AL" (2 chars) ou "C/AL" (4 chars avec '/').
+        # Nouvelle stratégie :
+        #   1. Chercher le skill complet tel quel (ex: "c/al", "al")
+        #   2. Si multi-mots : chercher la phrase complète, puis les mots longs
+        #   3. Fallback : tokens >= 2 chars (évite les articles "a", "i")
         matched_skill = False
-        if len(words) >= 2:
-            skill_phrase = r'\s+'.join(re.escape(w) for w in words[:2])
-            phrase_match = bool(re.search(skill_phrase, text_lower))
-            if phrase_match:
-                matched_skill = True
-            else:
-                matched_count = sum(
-                    1 for w in words
-                    if re.search(r'\b' + re.escape(w) + r'\b', text_lower)
-                )
-                if matched_count >= 2:
+
+        # Étape 1 : correspondance exacte du skill complet (gère "al", "c/al", etc.)
+        skill_escaped = re.escape(skill.strip())
+        if re.search(r'(?<![a-z0-9])' + skill_escaped + r'(?![a-z0-9])', text_lower):
+            matched_skill = True
+
+        if not matched_skill:
+            # Étape 2 : tokenisation — garder tous les tokens >= 2 chars
+            words = [w for w in re.split(r'[/\s]+', skill) if len(w) >= 2]
+            if not words:
+                continue
+
+            if len(words) >= 2:
+                # Chercher la phrase complète (ex: "azure devops", "business central saas")
+                skill_phrase = r'\s+'.join(re.escape(w) for w in words[:2])
+                if bool(re.search(skill_phrase, text_lower)):
                     matched_skill = True
-        else:
-            if re.search(r'\b' + re.escape(words[0]) + r'\b', text_lower):
-                matched_skill = True
+                else:
+                    # Compter les mots longs trouvés (> 3 chars)
+                    long_words = [w for w in words if len(w) > 3]
+                    if long_words:
+                        matched_count = sum(
+                            1 for w in long_words
+                            if re.search(r'\b' + re.escape(w) + r'\b', text_lower)
+                        )
+                        if matched_count >= 2:
+                            matched_skill = True
+            else:
+                # Skill mono-token >= 2 chars
+                if re.search(r'\b' + re.escape(words[0]) + r'\b', text_lower):
+                    matched_skill = True
 
         if matched_skill:
             if _is_negated(skill, text_lower):
@@ -884,6 +903,7 @@ def analyze_motivation_letter(
     job_description: str,
     job_skills     : str,
     job_company    : str = "",
+    job_lang       : str = "",   # BUG-LANG FIX : langue du job depuis DB (évite recalcul sur titre EN)
 ) -> Optional[dict]:
     """
     Analyse la lettre de motivation et retourne un score structuré.
@@ -1061,7 +1081,8 @@ def analyze_motivation_letter(
 
     # ── Étape 7d2 : Pénalité légère si langue lettre ≠ langue job ──────
     # La langue du job est inférée depuis job_title et job_description
-    langue_job = _detect_language(job_title + " " + job_description)
+    # BUG-LANG FIX : utiliser job_lang depuis DB si fourni, sinon détecter depuis texte
+    langue_job = job_lang if job_lang in ("fr", "en") else _detect_language(job_title + " " + job_description)
     if langue in ("fr", "en") and langue_job in ("fr", "en") and langue != langue_job:
         old_perso = criteres.get("personnalisation", 0)
         if old_perso > 55:
@@ -1211,6 +1232,7 @@ def run_motivation_agent(
     job_description: str,
     job_skills     : str,
     job_company    : str = "",
+    job_lang       : str = "",   # BUG-LANG FIX : passer job.lang depuis applications.py
     application_id : int = 0,
     db             = None,
 ) -> dict:
@@ -1266,6 +1288,7 @@ def run_motivation_agent(
             job_description = job_description,
             job_skills      = job_skills,
             job_company     = job_company,
+            job_lang        = job_lang,   # BUG-LANG FIX
         )
     except Exception as e:
         logger.error(

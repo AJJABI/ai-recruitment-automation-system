@@ -39,7 +39,8 @@ interface Job {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE  = import.meta.env.VITE_API_BASE_URL  ?? "http://localhost:8000";
+const N8N_BASE  = import.meta.env.VITE_N8N_BASE_URL  ?? "http://localhost:5678";
 const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function getToken(): string | null {
@@ -280,6 +281,16 @@ export default function ManagerScheduler() {
     expired_at: string | null;
   }[]>([]);
 
+  const [waitingCandidates, setWaitingCandidates] = useState<{
+    id: number;
+    candidate_name: string;
+    candidate_email: string;
+    score_final: number;
+    score_technique: number;
+  }[]>([]);
+  const [relancerLoading, setRelancerLoading] = useState(false);
+  const [relancerDone,    setRelancerDone]    = useState(false);
+
   // Auth guard
   useEffect(() => { if (!getToken()) navigate("/"); }, [navigate]);
 
@@ -347,6 +358,31 @@ export default function ManagerScheduler() {
     }
   }
 
+  // Cycle 2 — Relancer la sélection (WAITING_MEET → MEET_PENDING via n8n)
+  async function handleRelancerCycle2() {
+    if (!selectedJobId || relancerLoading) return;
+    setRelancerLoading(true);
+    try {
+      const res = await fetch(`${N8N_BASE}/webhook/elargir-selection`, {
+        method : "POST",
+        headers: { "Content-Type": "application/json" },
+        body   : JSON.stringify({ job_id: selectedJobId, cycle: 2 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success !== false) {
+        setRelancerDone(true);
+        setWaitingCandidates([]);
+        setToast({ msg: `✅ ${waitingCandidates.length} candidat(s) promu(s) en MEET_PENDING`, type: "ok" });
+      } else {
+        setToast({ msg: data.message ?? "Erreur lors du relancement.", type: "err" });
+      }
+    } catch {
+      setToast({ msg: "Impossible de contacter n8n.", type: "err" });
+    } finally {
+      setRelancerLoading(false);
+    }
+  }
+
   // Fetch slots — re-run when month or job changes
   async function fetchSlots() {
     if (!selectedJobId) return;
@@ -380,6 +416,18 @@ export default function ManagerScheduler() {
     fetch(`${API_BASE}/interviews/rejected-auto/${selectedJobId}`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : { candidates: [] })
       .then(data => setRejectedCandidates(data.candidates ?? []))
+      .catch(() => {});
+  }, [selectedJobId]);
+
+  // Fetch candidats WAITING_MEET pour cycle 2
+  useEffect(() => {
+    if (!selectedJobId) return;
+    setRelancerDone(false);
+    fetch(`${API_BASE}/applications/waiting-candidates/${selectedJobId}`, {
+      headers: { "Content-Type": "application/json", "x-n8n-secret": "mon-secret-n8n" },
+    })
+      .then(r => r.ok ? r.json() : { candidates: [] })
+      .then(data => setWaitingCandidates(data.candidates ?? []))
       .catch(() => {});
   }, [selectedJobId]);
 
@@ -507,6 +555,33 @@ export default function ManagerScheduler() {
 
               {/* Boutons top-right */}
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+
+                {/* Cycle 2 — Relancer sélection (visible si candidats WAITING_MEET) */}
+                {waitingCandidates.length > 0 && !relancerDone && (
+                  <button
+                    onClick={handleRelancerCycle2}
+                    disabled={relancerLoading}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      padding: "10px 20px", borderRadius: 11, border: "none",
+                      background: relancerLoading
+                        ? "rgba(148,163,184,0.3)"
+                        : "linear-gradient(135deg,#f59e0b,#d97706)",
+                      color: relancerLoading ? "#94a3b8" : "#fff",
+                      fontSize: 13, fontWeight: 700,
+                      cursor: relancerLoading ? "not-allowed" : "pointer",
+                      backdropFilter: "blur(8px)",
+                      boxShadow: relancerLoading ? "none" : "0 4px 14px rgba(245,158,11,0.35)",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {relancerLoading ? (
+                      <><span style={{ width: 14, height: 14, border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Relancement...</>
+                    ) : (
+                      <>⬆️ Restart selection ({waitingCandidates.length})</>
+                    )}
+                  </button>
+                )}
 
                 {/* Send Invitations */}
                 <button
@@ -912,6 +987,46 @@ export default function ManagerScheduler() {
               </div>
               <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflowY: "auto" }} className="scroll-list">
 
+                {/* Waiting Meet candidates — Cycle 2 */}
+                {waitingCandidates.length > 0 && !relancerDone && (
+                  <>
+                    <p style={{ fontSize: 9, fontWeight: 800, color: "#f59e0b", letterSpacing: "0.12em", margin: "4px 0 2px" }}>
+                      WAITING MEET — CYCLE 2 ({waitingCandidates.length})
+                    </p>
+                    {waitingCandidates.map(c => (
+                      <div key={c.id} style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "9px 12px", borderRadius: 10,
+                        background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.20)",
+                      }}>
+                        <div style={{
+                          width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+                          background: "rgba(245,158,11,0.12)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 11, fontWeight: 700, color: "#d97706",
+                        }}>
+                          {c.candidate_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#1c2a38", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {c.candidate_name}
+                          </div>
+                          <div style={{ fontSize: 10, color: "#94a3b8" }}>
+                            Score: {c.score_technique > 0 ? `${c.score_technique}/100` : `${c.score_final}/100`}
+                          </div>
+                        </div>
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 999,
+                          color: "#d97706", background: "rgba(245,158,11,0.10)",
+                          border: "1px solid rgba(245,158,11,0.30)", letterSpacing: "0.06em",
+                        }}>
+                          WAITING
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+
                 {/* Booked candidates */}
                 {slots.filter(s => s.status === "booked").length > 0 && (
                   <>
@@ -977,7 +1092,7 @@ export default function ManagerScheduler() {
                   </>
                 )}
 
-                {slots.filter(s => s.status === "booked").length === 0 && rejectedCandidates.length === 0 && (
+                {slots.filter(s => s.status === "booked").length === 0 && rejectedCandidates.length === 0 && waitingCandidates.length === 0 && (
                   <div style={{ textAlign: "center", padding: "32px 0", color: "#94a3b8", fontSize: 12 }}>
                     No candidates yet for this month.
                   </div>

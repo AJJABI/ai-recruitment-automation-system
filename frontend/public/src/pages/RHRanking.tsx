@@ -333,8 +333,26 @@ function CandidatRow({ candidat, rank, jobId, delay }: {
           {initials(candidat.candidate_name)}
         </div>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#1c2a38" }}>
-            {candidat.candidate_name}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#1c2a38" }}>
+              {candidat.candidate_name}
+            </span>
+            {candidat.status_v2 === "HIRED" && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+                background: "#dcfce7", color: "#16a34a",
+                border: "1px solid #bbf7d0",
+                padding: "2px 8px", borderRadius: 999,
+              }}>✓ HIRED</span>
+            )}
+            {candidat.status_v2 === "POSITION_FILLED" && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
+                background: "#f1f5f9", color: "#64748b",
+                border: "1px solid #e2e8f0",
+                padding: "2px 8px", borderRadius: 999,
+              }}>Position Filled</span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
             {candidat.candidate_email}
@@ -619,7 +637,7 @@ export default function RHRanking() {
           {/* Group 1 — Approved */}
           <div style={{ marginLeft: 55 }}>
             <GroupeSection
-              title="Manager Approved"
+              title="Final Selection"
               icon={<CheckCircle2 size={22} color="#10b981" />}
               color="#10b981"
               bg="rgba(16,185,129,0.05)"
@@ -630,18 +648,7 @@ export default function RHRanking() {
               delay={0.1}
             />
 
-            {/* Group 2 — To Review */}
-            <GroupeSection
-              title="To Review"
-              icon={<AlertTriangle size={22} color="#f59e0b" />}
-              color="#f59e0b"
-              bg="rgba(245,158,11,0.05)"
-              borderColor="rgba(245,158,11,0.2)"
-              candidats={ranking?.groupe_2.candidats ?? []}
-              jobId={jobId}
-              loading={loading}
-              delay={0.2}
-            />
+          
 
 
 

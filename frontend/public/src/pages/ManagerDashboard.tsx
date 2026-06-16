@@ -61,7 +61,7 @@ interface Notification {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const DECIDED = ["MANAGER_VALIDATED", "MANAGER_REJECTED", "MANAGER_TO_DEEPEN", "ACCEPTED"];
+const DECIDED = [ "MANAGER_REJECTED", "ACCEPTED"];
 
 const GRADIENTS = [
   ["#7c3aed", "#6d28d9"],

@@ -188,7 +188,6 @@ export default function CreateJob() {
   const [skillsRequired, setSkillsRequired] = useState("");
   const [skillsJson,     setSkillsJson]     = useState<SkillsJson>({ coding: [], platform: [], mixed: [] });
   const [bonusSkills,    setBonusSkills]    = useState<string[]>([]);
-  const [pipelineMode,   setPipelineMode]   = useState("SEMI_AUTO");
   const [managerId,      setManagerId]      = useState<number | null>(null);
 
   // UI state
@@ -229,7 +228,7 @@ export default function CreateJob() {
       skills_required: skillsRequired.trim(),
       skills_json:     (skillsJson.coding.length || skillsJson.platform.length || skillsJson.mixed.length) ? skillsJson : null,
       bonus_skills:    bonusSkills.length ? bonusSkills : null,
-      pipeline_mode:   pipelineMode,
+     
       manager_id:      managerId,
     };
 
@@ -505,41 +504,11 @@ export default function CreateJob() {
               </div>
             </Section>
 
-            {/* 4 — Pipeline & Manager */}
-            <Section icon={Zap} title="Pipeline & Assignment" color="#f59e0b" delay={0.2}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {/* 4 —  Manager */}
+            <Section icon={Zap} title=" Assignment" color="#f59e0b" delay={0.2}>
+              <div style={{ display: "grid", gap: 14 }}>
 
-                {/* Pipeline mode */}
-                <Field label="Pipeline Mode">
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {PIPELINE.map(p => (
-                      <motion.div
-                        key={p.value}
-                        whileHover={{ scale: 1.01 }}
-                        onClick={() => setPipelineMode(p.value)}
-                        style={{
-                          padding: "12px 14px", borderRadius: 10, cursor: "pointer",
-                          border: `1px solid ${pipelineMode === p.value ? "#7c3aed" : "rgba(255,255,255,0.9)"}`,
-                          background: pipelineMode === p.value ? "rgba(124,58,237,0.07)" : "rgba(255,255,255,0.7)",
-                          backdropFilter: "blur(8px)", transition: "all 0.15s",
-                          display: "flex", alignItems: "center", gap: 10,
-                        }}
-                      >
-                        <div style={{
-                          width: 14, height: 14, borderRadius: "50%", flexShrink: 0,
-                          border: `2px solid ${pipelineMode === p.value ? "#7c3aed" : "#cbd5e1"}`,
-                          background: pipelineMode === p.value ? "#7c3aed" : "transparent",
-                          transition: "all 0.15s",
-                        }} />
-                        <div>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: pipelineMode === p.value ? "#7c3aed" : "#1c2a38", margin: 0 }}>{p.label}</p>
-                          <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{p.desc}</p>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </Field>
-
+                
                 {/* Manager */}
                 <Field label="Assign a Manager" hint="Optional — can be assigned later">
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

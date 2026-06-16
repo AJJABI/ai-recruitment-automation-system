@@ -25,14 +25,13 @@ app.add_middleware(
 )
 
 app.include_router(jobs.router)
+app.include_router(tests.router)        # ← déplacé avant applications
 app.include_router(applications.router)
 app.include_router(auth.router)
 app.include_router(decision.router)
 app.include_router(interviews.router)
-app.include_router(tests.router)
 app.include_router(notifications.router)
 app.include_router(managers.router)
-
 
 Base.metadata.create_all(bind=engine)
 

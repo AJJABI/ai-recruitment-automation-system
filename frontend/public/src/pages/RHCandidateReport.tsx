@@ -500,7 +500,6 @@ export default function RHCandidateReport() {
 
   const STATUS_MAP: Record<string, { label: string; color: string; bg: string; border: string }> = {
     ACCEPTED        : { label: "Accepted",         color: "#059669", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)" },
-    TECH_EVALUATED  : { label: "Under review",      color: "#d97706", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
     MEET_PENDING    : { label: "Interview scheduled", color: "#2563eb", bg: "rgba(59,130,246,0.10)", border: "rgba(59,130,246,0.25)" },
     WAITING_MEET    : { label: "Waiting",           color: "#7c3aed", bg: "rgba(124,58,237,0.10)", border: "rgba(124,58,237,0.25)" },
     HIRED           : { label: "Hired",             color: "#059669", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)" },

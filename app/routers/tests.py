@@ -16,6 +16,7 @@ Flow n8n :
       → n8n Wait jusqu'à send_date
       → POST /tests/{test_id}/send
             payload : { job_id }
+            header  : x-n8n-secret: <N8N_SECRET>   ← pas de JWT (expirerait pendant le Wait)
             retour  : { candidates: [{email, name, test_link, expires_at}] }
       → n8n envoie Email 2 à chaque candidat (lien unique 24h)
 
@@ -28,7 +29,7 @@ Flow n8n :
 import os
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -40,6 +41,10 @@ from app.agents.test_agent.test_agent import run_generate_test
 router = APIRouter(prefix="/tests", tags=["Tests"])
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+# Secret partagé entre n8n et FastAPI pour les appels machine-to-machine.
+# Définir N8N_SECRET dans le .env — jamais exposé dans un JWT.
+N8N_SECRET = os.getenv("N8N_SECRET", "mon-secret-n8n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +79,7 @@ class SendTestInput(BaseModel):
     """
     Payload pour POST /tests/{test_id}/send.
     Appelé par n8n automatiquement à la date planifiée (après le Wait node).
+    Authentification : header x-n8n-secret (pas de JWT — il aurait expiré pendant le Wait).
     """
     job_id : int
 
@@ -197,6 +203,104 @@ def regenerate_test(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# N8N SCHEDULER — GET /tests/expired-links
+# Appelé toutes les heures par n8n pour détecter les liens de test non utilisés
+# ⚠️ Doit rester AVANT /{test_id} pour éviter le conflit de route FastAPI
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/expired-links")
+def get_expired_test_links(db: Session = Depends(get_db)):
+    """
+    Retourne les candidats en statut TEST_SENT dont test_expires_at est dépassé.
+    Le lien de test (valable 24h) n'a pas été utilisé par le candidat.
+
+    n8n appelle cet endpoint toutes les heures (Schedule Trigger),
+    puis pour chaque résultat :
+      - PATCH /tests/{application_id}/expire  → marque TEST_EXPIRED en DB
+      - Envoie un email au candidat l'informant de l'expiration
+    """
+    now = datetime.utcnow()
+
+    expired_apps = db.query(models.Application).filter(
+        models.Application.status_v2       == "TEST_SENT",
+        models.Application.test_expires_at <= now,
+    ).all()
+
+    result = []
+    for app in expired_apps:
+        cv  = db.query(models.CVProfile).filter(
+            models.CVProfile.application_id == app.id
+        ).first()
+        job = db.query(models.Job).filter(
+            models.Job.id == app.job_id
+        ).first()
+
+        result.append({
+            "application_id"  : app.id,
+            "candidate_email" : app.candidate_email,
+            "candidate_name"  : cv.full_name if cv else app.candidate_email,
+            "job_title"       : job.title if job else "—",
+            "job_id"          : app.job_id,
+            "expired_at"      : app.test_expires_at.isoformat() if app.test_expires_at else None,
+        })
+
+    return {"count": len(result), "expired": result}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# N8N SCHEDULER — PATCH /tests/{application_id}/expire
+# Marque un candidat TEST_SENT → TEST_EXPIRED après expiration du lien
+# ⚠️ Doit rester AVANT /{test_id}/validate et /{test_id}/send
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.patch("/{application_id}/expire")
+def expire_test_link(
+    application_id : int,
+    db             : Session = Depends(get_db),
+):
+    """
+    Appelé par n8n pour chaque candidat dont le lien de test a expiré.
+    Passe le statut TEST_SENT → TEST_EXPIRED et loggue l'événement.
+
+    Idempotent : si le statut a déjà changé (candidat a soumis entre-temps),
+    retourne silencieusement sans erreur.
+    """
+    app = db.query(models.Application).filter(
+        models.Application.id == application_id
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application non trouvée")
+
+    # Idempotence — déjà soumis ou déjà expiré
+    if app.status_v2 != "TEST_SENT":
+        return {
+            "message"      : "Statut déjà mis à jour — aucune action effectuée",
+            "status_v2"    : app.status_v2,
+            "application_id": application_id,
+        }
+
+    prev          = app.status_v2
+    app.status_v2 = "REJECTED_AUTO"
+
+    db.add(models.ApplicationEvent(
+        application_id  = app.id,
+        event           = "TEST_EXPIRED",
+        actor           = "system",
+        previous_status = prev,
+        new_status      = "REJECTED_AUTO",
+        details         = {"expired_at": datetime.utcnow().isoformat(), "reason": "test_link_expired"},
+    ))
+
+    db.commit()
+
+    return {
+        "message"       : "Test expiré — candidat rejeté automatiquement",
+        "application_id": application_id,
+        "status_v2"     : "REJECTED_AUTO",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PARTIE 2A — POST /tests/{test_id}/validate
 # Manager valide les questions + choisit la date d'envoi
 # ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +342,7 @@ def validate_test(
             send_date_dt = datetime.strptime(payload.send_date, "%d/%m/%Y %H:%M")
         except ValueError:
             raise HTTPException(
-                status_code=422, 
+                status_code=422,
                 detail="send_date invalide — formats acceptés : ISO 8601 ou DD/MM/YYYY HH:MM"
             )
 
@@ -281,7 +385,7 @@ def validate_test(
             new_status      = "TEST_READY",
             details         = {
                 "test_id"  : test_id,
-                "send_date": send_date_dt.isoformat(), 
+                "send_date": send_date_dt.isoformat(),
             },
         ))
 
@@ -316,14 +420,19 @@ def validate_test(
 # ─────────────────────────────────────────────────────────────────────────────
 # PARTIE 2B — POST /tests/{test_id}/send
 # Appelé par n8n à la date planifiée (après le Wait node)
+#
+# AUTH : header x-n8n-secret au lieu d'un JWT Bearer.
+# Raison : le JWT du Manager expire en 8h — le Wait node peut durer bien plus
+# longtemps. Un secret fixe partagé entre n8n et FastAPI est la solution correcte
+# pour les appels machine-to-machine sans session humaine.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/{test_id}/send")
 def send_test(
     test_id      : str,
     payload      : SendTestInput,
-    db           : Session     = Depends(get_db),
-    current_user : models.User = Depends(require_role("MANAGER", "RH")),
+    db           : Session = Depends(get_db),
+    x_n8n_secret : str     = Header(...),
 ):
     """
     Appelé automatiquement par n8n à la date planifiée (après le Wait node).
@@ -337,6 +446,10 @@ def send_test(
     n8n itère sur cette liste et envoie Email 2 à chacun.
     Le backend NE envoie PAS les emails — c'est le rôle de n8n.
     """
+    # ── 0. Vérifier le secret n8n ─────────────────────────────────────────────
+    if x_n8n_secret != N8N_SECRET:
+        raise HTTPException(status_code=401, detail="Non autorisé")
+
     # ── 1. Vérifier test + job ────────────────────────────────────────────────
     test = db.query(models.Test).filter(models.Test.test_id == test_id).first()
     if not test:

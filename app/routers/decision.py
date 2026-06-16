@@ -62,7 +62,7 @@ class ManagerDecisionInput(BaseModel):
     Reçoit la décision du manager après le meet technique (v2.0)
     """
     test_id          : str
-    manager_decision : str            # "VALIDÉ" / "À_APPROFONDIR" / "NON_RETENU"
+    manager_decision : str            # "VALIDÉ" / "NON_RETENU"
     manager_note     : Optional[str] = ""
     manager_id       : Optional[int] = 0
 
@@ -260,14 +260,8 @@ async def manager_decision(
     Enregistre la décision du manager après le meet technique.
 
     Règles :
-      NON_RETENU    → candidat rejeté définitivement (pass_to_agent5=False)
-      VALIDÉ        → passe à l'Agent 5, priority_group=1
-      À_APPROFONDIR → passe à l'Agent 5, priority_group=2
-
-    Le technical_score reste inchangé.
-    Le classement final se fait en 2 niveaux :
-      Niveau 1 : groupe manager (VALIDÉ avant À_APPROFONDIR)
-      Niveau 2 : score_global au sein du groupe
+      NON_RETENU → candidat rejeté définitivement (pass_to_agent5=False)
+      VALIDÉ     → passe à l'Agent 5, priority_group=1
     """
     # Vérifier que la candidature existe
     application = db.query(Application).filter(
@@ -320,13 +314,9 @@ async def manager_decision(
             "manager_note"   : body.manager_note,
         }
 
-    # VALIDÉ ou À_APPROFONDIR → mettre à jour status_v2
+    # VALIDÉ → mettre à jour status_v2
     try:
-        application.status_v2 = (
-            "MANAGER_VALIDATED"
-            if result.get("priority_group") == 1
-            else "MANAGER_TO_DEEPEN"
-        )
+        application.status_v2 = "ACCEPTED"
         db.commit()
     except Exception as db_err:
         raise HTTPException(
@@ -341,9 +331,7 @@ async def manager_decision(
         "manager_note"    : result["manager_note"],
         "rejected"        : False,
         "pass_to_agent5"  : True,
-        "priority_group"  : result["priority_group"],
-        # priority_group=1 → VALIDÉ (classé en premier)
-        # priority_group=2 → À_APPROFONDIR (classé en second)
+        "priority_group"  : 1,
     }
 
 

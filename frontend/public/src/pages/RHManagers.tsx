@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, UserCheck, Clock, Briefcase, Plus, Search,
   ChevronDown, ChevronRight, X, Mail, CheckCircle2,
-  AlertCircle, Trash2, ExternalLink, UserPlus,
+  AlertCircle, Trash2, ExternalLink, UserPlus, Pencil, Shield,
 } from "lucide-react";
 import { API_BASE, authHeaders } from "./managerShared";
 import bgWave from "../assets/imagee.png";
@@ -520,6 +520,272 @@ function AssignJobsModal({
   );
 }
 
+// ─── Modal — Modifier un Manager ─────────────────────────────────────────────
+
+function EditManagerModal({
+  manager, onClose, onSuccess,
+}: {
+  manager:   Manager;
+  onClose:   () => void;
+  onSuccess: () => void;
+}) {
+  const [fullName, setFullName] = useState(manager.full_name || "");
+  const [poste,    setPoste]    = useState(manager.poste    || "");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+
+  async function handleSave() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/managers/${manager.id}`, {
+        method:  "PUT",
+        headers: authHeaders(),
+        body:    JSON.stringify({ full_name: fullName, poste }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Update failed");
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(15,10,40,0.55)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }} onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: "spring", stiffness: 380, damping: 28 }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 20, padding: "32px 36px",
+          width: 440, boxShadow: "0 24px 64px rgba(60,12,120,0.18)",
+          border: "1px solid rgba(200,185,255,0.3)",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(124,58,237,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Pencil size={17} color="#7c3aed" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: "#1c2a38", margin: 0 }}>Edit Manager</h2>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>{manager.email}</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Fields */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6, letterSpacing: "0.04em" }}>
+              FULL NAME
+            </label>
+            <input
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              placeholder="John Doe"
+              autoFocus
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10,
+                border: "1.5px solid #e2e8f0", fontSize: 14, outline: "none",
+                background: "#f8fafc", color: "#1c2a38", boxSizing: "border-box",
+                transition: "border-color 0.15s",
+              }}
+              onFocus={e => (e.target.style.borderColor = "#7c3aed")}
+              onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6, letterSpacing: "0.04em" }}>
+              POSITION / ROLE
+            </label>
+            <input
+              value={poste}
+              onChange={e => setPoste(e.target.value)}
+              placeholder="Hiring Manager"
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10,
+                border: "1.5px solid #e2e8f0", fontSize: 14, outline: "none",
+                background: "#f8fafc", color: "#1c2a38", boxSizing: "border-box",
+                transition: "border-color 0.15s",
+              }}
+              onFocus={e => (e.target.style.borderColor = "#7c3aed")}
+              onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+            borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5",
+            fontSize: 12, color: "#dc2626", marginBottom: 16,
+          }}>
+            <AlertCircle size={13} />{error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{
+            flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", cursor: "pointer",
+          }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            style={{
+              flex: 2, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              border: "none", cursor: loading ? "not-allowed" : "pointer",
+              background: loading ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#4a1d96)",
+              color: loading ? "#94a3b8" : "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}
+          >
+            {loading
+              ? <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />Saving…</>
+              : <><Pencil size={14} />Save changes</>
+            }
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Modal — Confirmer suppression Manager ────────────────────────────────────
+
+function DeleteManagerModal({
+  manager, onClose, onSuccess,
+}: {
+  manager:   Manager;
+  onClose:   () => void;
+  onSuccess: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+
+  async function handleDelete() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/managers/${manager.id}`, {
+        method:  "DELETE",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Delete failed");
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(15,10,40,0.55)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }} onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: "spring", stiffness: 380, damping: 28 }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 20, padding: "32px 36px",
+          width: 420, boxShadow: "0 24px 64px rgba(60,12,120,0.18)",
+          border: "1px solid rgba(200,185,255,0.3)",
+        }}
+      >
+        {/* Icon + title */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginBottom: 24 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: "rgba(239,68,68,0.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+            <Trash2 size={22} color="#ef4444" />
+          </div>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: "#1c2a38", margin: "0 0 6px" }}>Remove Manager</h2>
+          <p style={{ fontSize: 13, color: "#64748b", margin: 0, lineHeight: 1.55 }}>
+            You're about to remove <strong>{manager.full_name || manager.email}</strong>.<br />
+            Their job assignments will also be removed. This cannot be undone.
+          </p>
+        </div>
+
+        {/* Manager info card */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "12px 16px", borderRadius: 12,
+          background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.15)",
+          marginBottom: 24,
+        }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+            background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 700, color: "#ef4444",
+          }}>
+            {(manager.full_name || manager.email).slice(0, 2).toUpperCase()}
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#1c2a38" }}>{manager.full_name || manager.email.split("@")[0]}</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{manager.email} · {manager.jobs_count} job{manager.jobs_count !== 1 ? "s" : ""}</div>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+            borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5",
+            fontSize: 12, color: "#dc2626", marginBottom: 16,
+          }}>
+            <AlertCircle size={13} />{error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{
+            flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", cursor: "pointer",
+          }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={loading}
+            style={{
+              flex: 2, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              border: "none", cursor: loading ? "not-allowed" : "pointer",
+              background: loading ? "#e2e8f0" : "linear-gradient(135deg,#ef4444,#b91c1c)",
+              color: loading ? "#94a3b8" : "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}
+          >
+            {loading
+              ? <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />Removing…</>
+              : <><Trash2 size={14} />Yes, remove</>
+            }
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Manager Row (avec accordéon jobs) ───────────────────────────────────────
 
 function ManagerRow({
@@ -533,6 +799,8 @@ function ManagerRow({
 }) {
   const [open,       setOpen]       = useState(false);
   const [assigning,  setAssigning]  = useState(false);
+  const [editing,    setEditing]    = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
   const [toast,      setToast]      = useState<{ msg: string; type: "ok"|"err" } | null>(null);
 
   async function handleUnassign(jobId: number, jobTitle: string) {
@@ -564,6 +832,34 @@ function ManagerRow({
             onSuccess={() => {
               setAssigning(false);
               setToast({ msg: "Jobs updated", type: "ok" });
+              onInvalidate();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editing && (
+          <EditManagerModal
+            manager={manager}
+            onClose={() => setEditing(false)}
+            onSuccess={() => {
+              setEditing(false);
+              setToast({ msg: "Manager updated", type: "ok" });
+              onInvalidate();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleting && (
+          <DeleteManagerModal
+            manager={manager}
+            onClose={() => setDeleting(false)}
+            onSuccess={() => {
+              setDeleting(false);
+              setToast({ msg: `${manager.email} removed`, type: "ok" });
               onInvalidate();
             }}
           />
@@ -623,9 +919,11 @@ function ManagerRow({
 
         {/* Actions */}
         <td style={{ padding: "14px 24px" }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Assign jobs */}
             <button
               onClick={() => setAssigning(true)}
+              title="Assign jobs"
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
@@ -637,9 +935,56 @@ function ManagerRow({
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(124,58,237,0.06)")}
             >
               <Briefcase size={13} />
-              Assign jobs
+              Assign
             </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#94a3b8" }} onClick={() => setOpen(o => !o)}>
+            {/* Edit */}
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit manager"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 30, height: 30, borderRadius: 8, border: "1px solid rgba(100,116,139,0.2)",
+                background: "rgba(100,116,139,0.05)", color: "#64748b", cursor: "pointer",
+                transition: "all 0.12s",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = "rgba(124,58,237,0.08)";
+                e.currentTarget.style.color = "#7c3aed";
+                e.currentTarget.style.borderColor = "rgba(124,58,237,0.25)";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "rgba(100,116,139,0.05)";
+                e.currentTarget.style.color = "#64748b";
+                e.currentTarget.style.borderColor = "rgba(100,116,139,0.2)";
+              }}
+            >
+              <Pencil size={13} />
+            </button>
+            {/* Delete */}
+            <button
+              onClick={() => setDeleting(true)}
+              title="Remove manager"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 30, height: 30, borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)",
+                background: "rgba(239,68,68,0.04)", color: "#fca5a5", cursor: "pointer",
+                transition: "all 0.12s",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = "rgba(239,68,68,0.1)";
+                e.currentTarget.style.color = "#ef4444";
+                e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "rgba(239,68,68,0.04)";
+                e.currentTarget.style.color = "#fca5a5";
+                e.currentTarget.style.borderColor = "rgba(239,68,68,0.15)";
+              }}
+            >
+              <Trash2 size={13} />
+            </button>
+            {/* Expand */}
+            <div style={{ display: "flex", alignItems: "center", color: "#94a3b8" }} onClick={() => setOpen(o => !o)}>
               <motion.div animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2 }}>
                 <ChevronRight size={16} />
               </motion.div>

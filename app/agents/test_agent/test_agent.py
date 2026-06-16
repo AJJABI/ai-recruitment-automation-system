@@ -954,7 +954,7 @@ def _build_mcq_templates(mcq_skills: list[str], all_skills: list[str], seniority
       "type": "mcq",
       "skill": "{skill_label}",
       "difficulty": "{_diff(i)}",
-      "question": "Concrete situational question min 80 chars. NEVER start with 'What is' or 'What is the primary benefit'. Use: 'Your team...', 'A developer...', 'You notice...', 'Given this code...'. MANDATORY: include ONE specific constraint (budget/latency/team size/compliance) that makes exactly ONE answer correct and the other 3 clearly wrong.",
+      "question": "Concrete situational question min 80 chars. NEVER start with 'What is' or 'What is the primary benefit'. Use: 'Your team...', 'A developer...', 'You notice...', 'Given this code...'. MANDATORY: include ONE specific constraint (budget/latency/team size/compliance) that makes exactly ONE answer correct and the other 3 clearly wrong. DISAMBIGUATION CHECK: before finalizing, ask yourself 'could a senior engineer reasonably choose option B or C instead of A?' — if YES, add a harder constraint or rewrite until only ONE answer is defensible.",
       "code_snippet": "ONLY include code that is REFERENCED in the question. CRITICAL: the correct answer must NEVER appear verbatim in the code_snippet — if the answer is visible in the snippet, rewrite the question to test something else about the code. Leave empty string if no code needed.",
       "options": [
         "The correct answer — clearly right ONLY given the stated constraint",
@@ -1346,6 +1346,7 @@ ANTI-PATTERNS — NEVER generate these
 ❌ "What is X?" or "Define X"
 ❌ MCQ with one obviously wrong option
 ❌ MCQ where 2 or more options are both valid best practices (ambiguous)
+❌ MCQ where a senior engineer could legitimately argue for multiple options — add a constraint that eliminates all but one
 ❌ MCQ where the correct answer appears verbatim in the code_snippet — this gives away the answer before reading options
 ❌ MCQ with 3 or more options starting with a generic verb: "Improved X", "Faster X", "Simplified X", "Reduced X", "Better X" — every option must be a specific technical value, action, or config
 ❌ MCQ asking "What is the primary benefit of X?" with no specific constraint — all options become valid
@@ -1610,16 +1611,141 @@ def _call_llm_generate(prompt: str, attempt: int = 1) -> str:
     return choice.message.content.strip()
 
 
-def _call_llm_evaluate(prompt: str) -> str:
-    """Appel LLM évaluation — température 0 pour reproductibilité maximale."""
+def _call_llm_evaluate(prompt: str, temperature: float = 0.0) -> str:
+    """Appel LLM évaluation.
+    temperature=0.0 pour Run 1 (déterministe), 0.3 pour Run 2 (diversité).
+    """
     client = _get_openrouter_client()
     response = client.chat.completions.create(
         model=OPENROUTER_MODEL_EVALUATE,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,   # déterministe — critique pour la cohérence inter-runs
+        temperature=temperature,
         max_tokens=2048,
     )
     return response.choices[0].message.content.strip()
+
+
+def _verify_mcq_answers(questions: list[dict]) -> list[dict]:
+    """
+    Vérification indépendante des réponses MCQ après génération.
+
+    Problème résolu :
+        Le LLM de génération choisit lui-même la clé `answer` — il peut
+        désigner une mauvaise réponse comme correcte (ex: Q3 et Q6 observés
+        en production). Ce second appel LLM relit chaque MCQ et confirme
+        ou corrige la bonne réponse INDÉPENDAMMENT du prompt de génération.
+
+    Architecture :
+        - Appel unique avec toutes les MCQ en batch (1 seul appel API)
+        - Température 0 pour la cohérence
+        - Si le LLM de vérification confirme → aucun changement
+        - Si désaccord → la réponse vérifiée remplace l'originale + warning
+        - Si parsing échoue → on conserve la réponse originale (pas de blocage)
+
+    Returns:
+        Liste des questions avec les clés `answer` corrigées si nécessaire.
+    """
+    mcq_questions = [q for q in questions if q.get("type") == "mcq"]
+    if not mcq_questions:
+        return questions
+
+    # Construire le prompt de vérification
+    items = []
+    for q in mcq_questions:
+        items.append({
+            "id"             : q["id"],
+            "question"       : q.get("question", ""),
+            "code_snippet"   : q.get("code_snippet", ""),
+            "options"        : q.get("options", []),
+            "current_answer" : q.get("answer", ""),
+        })
+
+    verification_prompt = f"""You are a senior technical expert reviewing MCQ answers for a recruitment test.
+
+For each question below, identify which option is the SINGLE correct answer.
+Be strict: if the question has a specific technical constraint, ONLY the option that satisfies
+that exact constraint is correct.
+
+CRITICAL RULES:
+- OAuth flows: "authorization code flow" is for user-delegated auth, "client credentials" is for server-to-server
+- AL/Business Central layouts: pages have FIXED layouts defined in AL code, not dynamic ones
+- Answer ONLY based on technical correctness — do NOT default to the "current_answer" if it is wrong
+
+Questions to verify:
+{json.dumps(items, indent=2, ensure_ascii=False)}
+
+Respond ONLY with valid JSON, no text before or after:
+{{
+  "verifications": [
+    {{
+      "id": <question_id>,
+      "correct_answer": "<exact text of the correct option>",
+      "confidence": "high|medium|low",
+      "changed": true|false,
+      "reason": "<one sentence explaining why, especially if changed>"
+    }}
+  ]
+}}"""
+
+    try:
+        client = _get_openrouter_client()
+        raw = client.chat.completions.create(
+            model=OPENROUTER_MODEL_EVALUATE,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a JSON generator. Output ONLY raw valid JSON. No markdown fences.",
+                },
+                {"role": "user", "content": verification_prompt},
+            ],
+            temperature=0.0,
+            max_tokens=1500,
+        ).choices[0].message.content.strip()
+
+        clean  = re.sub(r'```json|```', '', raw).strip()
+        parsed = json.loads(clean)
+        verifications = {v["id"]: v for v in parsed.get("verifications", [])}
+
+        # Construire un index des questions MCQ par id
+        q_map = {q["id"]: q for q in questions}
+
+        changes = []
+        for qid, verif in verifications.items():
+            q = q_map.get(qid)
+            if not q or q.get("type") != "mcq":
+                continue
+
+            verified_answer = verif.get("correct_answer", "").strip()
+            opts = [str(o).strip() for o in q.get("options", [])]
+
+            # Vérifier que la réponse vérifiée est bien dans les options
+            if verified_answer not in opts:
+                logger.warning(
+                    f"  [mcq_verify] Q{qid} — réponse vérifiée '{verified_answer[:50]}' "
+                    f"absente des options → conservation originale"
+                )
+                continue
+
+            original = q.get("answer", "").strip()
+            if verified_answer != original and verif.get("confidence") in ("high", "medium"):
+                q["answer"] = verified_answer
+                changes.append(
+                    f"Q{qid}: '{original[:40]}' → '{verified_answer[:40]}' "
+                    f"(confidence={verif.get('confidence')}, reason={verif.get('reason', '')[:60]})"
+                )
+
+        if changes:
+            logger.warning(
+                f"  [mcq_verify] {len(changes)} réponse(s) MCQ corrigée(s) : {changes}"
+            )
+        else:
+            logger.info("  [mcq_verify] Toutes les réponses MCQ confirmées correctes.")
+
+    except Exception as e:
+        # Pas de blocage si la vérification échoue — on conserve les réponses originales
+        logger.warning(f"  [mcq_verify] Vérification MCQ échouée ({e}) — réponses originales conservées")
+
+    return questions
 
 
 def _validate_evaluation_format(ev: dict) -> tuple[bool, str]:
@@ -2346,6 +2472,14 @@ def _force_skills_by_position(
             f"  [test_agent] _force_skills — "
             f"{len(reassignments)} réassignation(s) contenu/skill : {reassignments}"
         )
+        # Si trop de réassignations → le LLM a ignoré le plan de skills
+        # → déclencher un retry complet pour régénérer
+        if len(reassignments) > 2:
+            raise _ValidationError(
+                f"Trop de mismatches contenu/skill ({len(reassignments)}/{ len(questions)}) "
+                f"— le LLM a ignoré le plan de distribution. RETRY. "
+                f"Détails : {reassignments[:3]}"
+            )
     if not typo_corrections and not reassignments:
         logger.info("  [test_agent] _force_skills — aucune correction nécessaire")
 
@@ -2412,6 +2546,13 @@ def _generate_questions(
             # Corrige les troncatures LLM ("pyho"→"python", "shaepoi"→"sharepoint")
             # sans modifier le contenu des questions.
             questions = _force_skills_by_position(questions, skill_assignment)
+
+            # ── Vérification indépendante réponses MCQ ────────────
+            # Second appel LLM qui relit chaque MCQ et confirme/corrige
+            # la bonne réponse indépendamment du prompt de génération.
+            # Résout le problème de Q3/Q6 où le LLM générateur choisissait
+            # une mauvaise clé `answer`.
+            questions = _verify_mcq_answers(questions)
 
             # ── Validation distribution MCQ (v8.0) ───────────────
             # Vérifie que le LLM a bien respecté le plan de distribution
@@ -2632,14 +2773,16 @@ def _evaluate_open_questions(
     evals_run2: list[dict] = []
 
     try:
-        raw1       = _call_llm_evaluate(prompt)
+        raw1       = _call_llm_evaluate(prompt, temperature=0.0)
         evals_run1 = _parse_and_validate_llm_eval(raw1, expected_ids)
         logger.info(f"  [eval] Run 1 — {len(evals_run1)}/{len(questions_to_evaluate)} évals valides")
     except Exception as e:
         logger.error(f"  [eval] Run 1 échoué : {e}")
 
     try:
-        raw2       = _call_llm_evaluate(prompt)
+        # Run 2 à température 0.3 pour une vraie diversité inter-runs
+        # (température 0 = résultat identique au run 1 → robustesse nulle)
+        raw2       = _call_llm_evaluate(prompt, temperature=0.3)
         evals_run2 = _parse_and_validate_llm_eval(raw2, expected_ids)
         logger.info(f"  [eval] Run 2 — {len(evals_run2)}/{len(questions_to_evaluate)} évals valides")
     except Exception as e:

@@ -35,6 +35,11 @@ class Job(Base):
     test_validated      = Column(Boolean,  default=False)  # True quand Manager valide
     test_id_validated   = Column(String,   nullable=True)  # ID test validé
 
+    # ── Langue du poste ──────────────────────────────────────
+    # "fr" → poste en français, "en" → poste en anglais
+    # Utilisé par motivation_agent pour détecter mismatch langue lettre/poste
+    lang = Column(String(5), nullable=True, default="fr")
+
     # ── Mode pipeline ────────────────────────────────────────
     # AUTO      → agent décide seul
     # SEMI_AUTO → RH reçoit rappel 48h — jamais auto-accept
@@ -78,7 +83,8 @@ class Application(Base):
             "TEST_READY",                # test validé Manager, pas encore envoyé
             "TEST_SENT",                 # email envoyé (lien 24h)
             "TEST_IN_PROGRESS",          # candidat a ouvert → timer 60min
-            "TEST_COMPLETED",            # candidat a soumis
+            "TEST_COMPLETED", 
+            "TEST_EXPIRED",           # candidat a soumis
 
             # Phase 3 — Décision après test (gate technique)
             "REJECTED_TECH",             # score technique < 50 → rejeté direct

@@ -274,7 +274,7 @@ def get_manager_jobs(
             "pipeline": {
                 "total":      len(applications),
                 "acceptes":   sum(1 for a in applications if a.status_v2 == "ACCEPTED"),
-                "rejetes":    sum(1 for a in applications if a.status_v2 in ["REJECTED_AUTO", "REJECTED_FINAL"]),
+                "rejetes":    sum(1 for a in applications if a.status_v2 in ["REJECTED_AUTO", "REJECTED_FINAL", "MANAGER_REJECTED"]),
                 "en_attente": sum(1 for a in applications if a.status_v2 in ["APPLIED", "MATCHED", "EN_ATTENTE"]),
             },
         })
@@ -386,3 +386,65 @@ def unassign_job(
         "manager_id": manager_id,
         "job_id":     job_id,
     }
+
+class UpdateManagerPayload(BaseModel):
+    full_name: Optional[str] = None
+    poste:     Optional[str] = None
+
+
+@router.put("/{manager_id}", status_code=200)
+def update_manager(
+    manager_id:   int,
+    payload:      UpdateManagerPayload,
+    db:           Session      = Depends(get_db),
+    current_user: models.User  = Depends(require_role("RH")),
+):
+    """Modifier le nom et le poste d'un manager."""
+    manager = db.query(models.User).filter(
+        models.User.id   == manager_id,
+        models.User.role == "MANAGER",
+    ).first()
+    if not manager:
+        raise HTTPException(status_code=404, detail="Manager non trouvé")
+
+    if payload.full_name is not None:
+        manager.full_name = payload.full_name
+    if payload.poste is not None:
+        manager.poste = payload.poste
+
+    db.commit()
+    db.refresh(manager)
+    return _build_manager_out(manager, db)
+
+
+@router.delete("/{manager_id}", status_code=200)
+def delete_manager(
+    manager_id:   int,
+    db:           Session      = Depends(get_db),
+    current_user: models.User  = Depends(require_role("RH")),
+):
+    """
+    Supprime un manager et ses assignations de jobs.
+    Ne supprime pas les candidatures ou entretiens liés.
+    """
+    manager = db.query(models.User).filter(
+        models.User.id   == manager_id,
+        models.User.role == "MANAGER",
+    ).first()
+    if not manager:
+        raise HTTPException(status_code=404, detail="Manager non trouvé")
+
+    # Supprimer ses assignations
+    db.query(models.ManagerJob).filter(
+        models.ManagerJob.manager_id == manager_id
+    ).delete()
+
+    # Supprimer ses tokens d'invitation
+    db.query(models.InvitationToken).filter(
+        models.InvitationToken.user_id == manager_id
+    ).delete()
+
+    db.delete(manager)
+    db.commit()
+
+    return {"message": f"Manager {manager.email} supprimé"}
