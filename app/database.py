@@ -30,6 +30,7 @@ engine = create_engine(
     pool_pre_ping=True,    # vérifie la connexion avant chaque requête
     pool_size=5,           # connexions simultanées max
     max_overflow=10,       # connexions supplémentaires si pool plein
+    connect_args={"options": "-c timezone=Africa/Tunis"},  # session timezone = UTC+1 (Tunis)
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

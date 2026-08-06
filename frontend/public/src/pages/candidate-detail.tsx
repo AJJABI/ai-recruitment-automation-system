@@ -375,6 +375,10 @@ interface RHReport {
   weaknesses?: string[];
   interview_questions?: string[];
   message?: string;
+  manager_review?: {          // ← AJOUTER ICI
+    decision?: string;
+    note?    : string;
+  };
   [key: string]: unknown;
 }
 
@@ -435,6 +439,19 @@ export default function CandidateDetail() {
           jRes.json(),
         ]);
         setReport(rData); setCv(cvData); setJob(jData);
+
+        // ── Pré-remplir l'évaluation Manager si déjà soumise ──────────────
+        if (rData?.manager_review) {
+          const decisionMap: Record<string, string> = {
+            "Validated"  : "VALIDÉ",
+            "Non retenu" : "NON_RETENU",
+            "To review"  : "NON_RETENU",
+          };
+          const raw = rData.manager_review.decision ?? "";
+          setRecommendation(decisionMap[raw] ?? "VALIDÉ");
+          setFeedback(rData.manager_review.note ?? "");
+          setSubmitted(true); // verrouille le formulaire
+        }
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
@@ -474,8 +491,12 @@ export default function CandidateDetail() {
   };
 
   // Verrouiller le formulaire si déjà soumis dans cette session
-  // OU si le candidat a déjà une décision enregistrée (ACCEPTED ou REJECTED_FINAL)
-  const alreadyDecided = ["ACCEPTED", "REJECTED_FINAL"].includes(report?.status_v2 ?? "");
+  // OU si le candidat a déjà une décision enregistrée (manager_review présent ou statut final)
+  const alreadyDecided =
+    report?.manager_review != null ||
+    ["ACCEPTED", "REJECTED_FINAL", "MANAGER_REJECTED", "NO_SHOW"].includes(
+      report?.status_v2 ?? ""
+    );
   const isLocked       = submitted || alreadyDecided;
 
   return (

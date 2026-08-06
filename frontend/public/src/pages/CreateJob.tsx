@@ -21,7 +21,7 @@ import bgWave  from "../assets/imagee.png";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 
-const LEVELS   = ["Junior", "Mid", "Senior", "Lead", "Manager"];
+const LEVELS   = ["Junior", "Mid", "Senior"];
 const PIPELINE = [
   { value: "SEMI_AUTO", label: "Semi-Auto", desc: "HR gets reminder 48h — never auto-accept" },
   { value: "AUTO",      label: "Auto",      desc: "Agent decides alone" },

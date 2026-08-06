@@ -898,12 +898,13 @@ def _build_justification(
 
 
 def analyze_motivation_letter(
-    letter_path    : str,
-    job_title      : str,
-    job_description: str,
-    job_skills     : str,
-    job_company    : str = "",
-    job_lang       : str = "",   # BUG-LANG FIX : langue du job depuis DB (évite recalcul sur titre EN)
+    letter_path         : str,
+    job_title           : str,
+    job_description     : str,
+    job_skills          : str,
+    job_company         : str = "",
+    job_lang            : str = "",   # BUG-LANG FIX : langue du job depuis DB (évite recalcul sur titre EN)
+    years_experience_cv : Optional[float] = None,  # BUG-SENIORITY-LOGIC FIX : XP pro réelle issue du CV
 ) -> Optional[dict]:
     """
     Analyse la lettre de motivation et retourne un score structuré.
@@ -1048,13 +1049,25 @@ def analyze_motivation_letter(
 
     # ── Étape 7b2 : Détection profil junior (flag uniquement) ──────────
     # Le plafond sera appliqué APRÈS _calculate_score (étape 8b)
+    #
+    # BUG-SENIORITY-SUBSTRING FIX :
+    # L'ancien test "sig in letter_text.lower()" est un simple match de
+    # sous-chaîne, pas un match de mot entier. Des mots français courants
+    # comme "interne" (équipe interne, API interne), "international" ou
+    # "internet" contiennent la sous-chaîne "intern" et déclenchaient à
+    # tort le plafond junior, même pour des profils avec 3+ ans d'XP.
+    # Fix : word-boundary regex (\b...\b) pour ne matcher que le mot entier.
     junior_signals = [
         "stage", "stagiaire", "étudiant", "pfe",
         "fin d'études", "licence", "master 1", "bachelor",
         "intern", "student", "internship", "graduate", "entry level",
         "first experience", "première expérience",
     ]
-    is_junior_letter = any(sig in letter_text.lower() for sig in junior_signals)
+    text_lower_for_seniority = letter_text.lower()
+    is_junior_letter = any(
+        re.search(r'\b' + re.escape(sig) + r'\b', text_lower_for_seniority)
+        for sig in junior_signals
+    )
     if is_junior_letter:
         logger.debug("  [seniority] Profil junior détecté dans la lettre")
 
@@ -1158,7 +1171,22 @@ def analyze_motivation_letter(
         )
 
     # ── Étape 8b : Seniority cap APRÈS calcul ────────────────────────
-    if is_junior_letter and score_final > 65:
+    # BUG-SENIORITY-LOGIC FIX :
+    # is_junior_letter ne regarde que des mots-clés dans le texte de la
+    # lettre ("stage", "pfe", "fin d'études"...). Un candidat avec une
+    # XP pro substantielle peut légitimement mentionner un ancien stage
+    # (ex: stage de fin d'études suivi de 2-3 ans de poste) sans être
+    # un profil junior. On ignore donc le plafond si le CV confirme
+    # > 1 an d'XP professionnelle réelle (hors stages/alternance).
+    seniority_cap_ignore = (
+        years_experience_cv is not None and years_experience_cv > 1
+    )
+    if is_junior_letter and seniority_cap_ignore:
+        logger.debug(
+            f"  [seniority] Mot-clé junior détecté dans la lettre mais "
+            f"XP CV={years_experience_cv} ans > 1 an → plafond ignoré"
+        )
+    elif is_junior_letter and score_final > 65:
         score_avant_junior = score_final
         score_final = min(score_final, 65)
         logger.info(
@@ -1184,6 +1212,22 @@ def analyze_motivation_letter(
         logger.info(
             f"  [hard-gate] Score plafonné : {score_avant_gate} → 20 "
             f"(coherence<25 + 0 skill → rejet métier)"
+        )
+
+    # ── Plafond dur global motivation ────────────────────────────────
+    # BUG-SCORE-INFLATION FIX :
+    # La lettre de motivation seule, même jugée "parfaite" par le LLM,
+    # ne doit jamais dominer la décision finale. Le score matching
+    # (compétences réelles, XP, adéquation poste) doit rester le
+    # signal principal. Plafond inconditionnel à 70, pour tous les
+    # niveaux et profils — appliqué après tous les autres plafonds.
+    if score_final > 70:
+        score_avant_hard_cap = score_final
+        score_final = 70
+        logger.info(
+            f"  [hard-cap] Score motivation plafonné : "
+            f"{score_avant_hard_cap} → {score_final} "
+            f"(plafond global 70 — la lettre ne doit pas dominer le score final)"
         )
 
     pertinence  = _get_pertinence(score_final)
@@ -1227,14 +1271,15 @@ def analyze_motivation_letter(
 # ─────────────────────────────────────────
 
 def run_motivation_agent(
-    letter_path    : str,
-    job_title      : str,
-    job_description: str,
-    job_skills     : str,
-    job_company    : str = "",
-    job_lang       : str = "",   # BUG-LANG FIX : passer job.lang depuis applications.py
-    application_id : int = 0,
-    db             = None,
+    letter_path         : str,
+    job_title           : str,
+    job_description     : str,
+    job_skills          : str,
+    job_company         : str = "",
+    job_lang            : str = "",   # BUG-LANG FIX : passer job.lang depuis applications.py
+    years_experience_cv : Optional[float] = None,  # BUG-SENIORITY-LOGIC FIX : XP pro réelle issue du CV
+    application_id      : int = 0,
+    db                  = None,
 ) -> dict:
     """
     Wrapper pour l'intégration FastAPI/applications.py.
@@ -1283,12 +1328,13 @@ def run_motivation_agent(
 
     try:
         result = analyze_motivation_letter(
-            letter_path     = letter_path,
-            job_title       = job_title,
-            job_description = job_description,
-            job_skills      = job_skills,
-            job_company     = job_company,
-            job_lang        = job_lang,   # BUG-LANG FIX
+            letter_path         = letter_path,
+            job_title           = job_title,
+            job_description     = job_description,
+            job_skills          = job_skills,
+            job_company         = job_company,
+            job_lang            = job_lang,   # BUG-LANG FIX
+            years_experience_cv = years_experience_cv,  # BUG-SENIORITY-LOGIC FIX
         )
     except Exception as e:
         logger.error(

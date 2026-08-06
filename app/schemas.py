@@ -165,6 +165,21 @@ class SetupPasswordResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────
+# AUTH — MOT DE PASSE OUBLIÉ
+# ─────────────────────────────────────────────────────────────────
+
+class ForgotPasswordInput(BaseModel):
+    email: str
+
+    @validator("email")
+    def validate_email(cls, v):
+        v = v.strip().lower()
+        if "@" not in v:
+            raise ValueError("Email invalide")
+        return v
+
+
+# ─────────────────────────────────────────────────────────────────
 # JOB — ENRICHI POINT 2
 # ─────────────────────────────────────────────────────────────────
 
@@ -194,7 +209,7 @@ class JobCreate(BaseModel):
     def validate_level(cls, v):
         if v is None:
             return v
-        allowed = {"Junior", "Mid", "Senior", "Lead", "Manager"}
+        allowed = {"Junior", "Mid", "Senior"}
         if v not in allowed:
             raise ValueError(f"level doit être dans {allowed}")
         return v

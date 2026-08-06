@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Lock, Eye, EyeOff, ShieldCheck, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 
-export default function SetupPasswordPage() {
+export default function ResetPasswordPage() {
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -11,6 +11,7 @@ export default function SetupPasswordPage() {
     const [ready, setReady] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState("");
+    const [tokenStatus, setTokenStatus] = useState<"checking" | "valid" | "invalid">("checking");
     const [, navigate] = useLocation();
 
     // Retrieve token from URL
@@ -18,8 +19,22 @@ export default function SetupPasswordPage() {
 
     useEffect(() => {
         const t = setTimeout(() => setReady(true), 60);
+
+        if (!token) {
+            setTokenStatus("invalid");
+            return () => clearTimeout(t);
+        }
+
+        // Vérifier le token au chargement — avant d'afficher le formulaire
+        fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/auth/check-token?token=${token}`)
+            .then(res => {
+                if (res.ok) setTokenStatus("valid");
+                else setTokenStatus("invalid");
+            })
+            .catch(() => setTokenStatus("invalid"));
+
         return () => clearTimeout(t);
-    }, []);
+    }, [token]);
 
     const strength = (() => {
         if (password.length === 0) return 0;
@@ -64,10 +79,6 @@ export default function SetupPasswordPage() {
                 setError(data.detail || "An error occurred.");
                 return;
             }
-
-            // Supprimer tout token en cache (ex: session RH encore active dans ce navigateur)
-            // pour que "/" affiche le login au lieu de rediriger automatiquement vers /rh/dashboard
-            localStorage.removeItem("access_token");
 
             setSuccess(true);
             setTimeout(() => navigate("/"), 3000);
@@ -229,7 +240,7 @@ export default function SetupPasswordPage() {
                         </div>
 
                         <div style={{ fontSize: 42, fontWeight: 800, color: "#ffffff", lineHeight: 1.1, letterSpacing: "-0.025em", marginBottom: 8 }}>
-                            Set up your<br />password
+                            Reset your<br />password
                         </div>
 
                         <div style={{ marginTop: 20, display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -238,7 +249,7 @@ export default function SetupPasswordPage() {
                                 background: "linear-gradient(to bottom, #7c3aed, #a78bfa)",
                             }} />
                             <p style={{ fontSize: 14, color: "#94a3b8", lineHeight: 1.7 }}>
-                                You have been invited to join the Dynamix Services platform as a <strong style={{ color: "#a78bfa" }}>Manager</strong>. Choose a secure password to activate your account.
+                                Choose a new secure password for your <strong style={{ color: "#a78bfa" }}>Dynamix Services</strong> account. This link is valid for 1 hour and can only be used once.
                             </p>
                         </div>
 
@@ -275,7 +286,35 @@ export default function SetupPasswordPage() {
 
                     <div style={{ width: "100%", maxWidth: 340 }}>
 
-                        {success ? (
+                        {tokenStatus === "checking" ? (
+                            /* ── CHECKING STATE ── */
+                            <div style={{ textAlign: "center", padding: "40px 0" }}>
+                                <svg style={{ animation: "spin 0.75s linear infinite", margin: "0 auto 16px", display: "block" }} width="36" height="36" viewBox="0 0 24 24" fill="none">
+                                    <circle cx="12" cy="12" r="10" stroke="#e2e8f0" strokeWidth="3" />
+                                    <path d="M12 2a10 10 0 0 1 10 10" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" />
+                                </svg>
+                                <p style={{ fontSize: 14, color: "#94a3b8" }}>Verifying your link…</p>
+                            </div>
+                        ) : tokenStatus === "invalid" ? (
+                            /* ── INVALID / EXPIRED TOKEN ── */
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{
+                                    width: 80, height: 80, borderRadius: "50%",
+                                    background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    margin: "0 auto 24px",
+                                    boxShadow: "0 8px 32px rgba(239,68,68,0.3)",
+                                }}>
+                                    <Lock size={36} color="white" />
+                                </div>
+                                <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1e1b4b", marginBottom: 10 }}>
+                                    Link expired or invalid
+                                </h2>
+                                <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>
+                                    This reset link has expired or has already been used.
+                                </p>
+                            </div>
+                        ) : success ? (
                             /* ── SUCCESS STATE ── */
                             <div style={{ textAlign: "center" }}>
                                 <div className="success-icon" style={{
@@ -288,10 +327,10 @@ export default function SetupPasswordPage() {
                                     <ShieldCheck size={38} color="white" />
                                 </div>
                                 <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1e1b4b", marginBottom: 10 }}>
-                                    Account activated!
+                                    Password reset!
                                 </h2>
                                 <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>
-                                    Your password has been set successfully.<br />
+                                    Your password has been updated successfully.<br />
                                     Redirecting to the login page…
                                 </p>
                             </div>
@@ -300,10 +339,10 @@ export default function SetupPasswordPage() {
                             <>
                                 <div className="fu1" style={{ marginBottom: 32 }}>
                                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "#1e1b4b", letterSpacing: "-0.02em" }}>
-                                        Create your password
+                                        Set new password
                                     </h1>
                                     <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 6 }}>
-                                        Link valid for 24 hours — single use
+                                        Link valid for 1 hour — single use
                                     </p>
                                 </div>
 
@@ -401,7 +440,7 @@ export default function SetupPasswordPage() {
                                                     <path d="M12 2a10 10 0 0 1 10 10" stroke="white" strokeWidth="3" strokeLinecap="round" />
                                                 </svg>
                                             ) : (
-                                                <><span>Activate my account</span><ArrowRight size={16} /></>
+                                                <><span>Reset password</span><ArrowRight size={16} /></>
                                             )}
                                         </button>
                                     </div>

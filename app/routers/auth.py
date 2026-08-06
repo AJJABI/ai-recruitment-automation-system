@@ -206,7 +206,10 @@ def setup_password(
         raise HTTPException(status_code=404, detail="Lien invalide")
     if invitation.used:
         raise HTTPException(status_code=400, detail="Lien déjà utilisé")
-    if invitation.expires_at < datetime.utcnow():
+    # Comparaison naive UTC — évite le décalage timezone Tunis (UTC+1)
+    now_utc     = datetime.utcnow().replace(tzinfo=None)
+    expires_utc = invitation.expires_at.replace(tzinfo=None) if invitation.expires_at.tzinfo else invitation.expires_at
+    if expires_utc < now_utc:
         raise HTTPException(status_code=400, detail="Lien expiré")
 
     # Mettre à jour le mot de passe + activer le compte
@@ -238,6 +241,90 @@ def setup_password(
         "message": "Mot de passe défini avec succès. Vous pouvez maintenant vous connecter.",
         "email": user.email
     }
+
+
+# ============================================================
+# NOUVEL ENDPOINT — VÉRIFICATION TOKEN (avant affichage formulaire)
+# ============================================================
+
+@router.get("/check-token")
+def check_token(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Vérifie si un token (reset ou invitation) est valide et non expiré.
+    Appelé par le frontend au chargement de la page reset-password.
+    Ne consomme pas le token — juste une lecture.
+    """
+    invitation = db.query(models.InvitationToken).filter(
+        models.InvitationToken.token == token
+    ).first()
+
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Lien invalide")
+    if invitation.used:
+        raise HTTPException(status_code=400, detail="Lien déjà utilisé")
+
+    now_utc     = datetime.utcnow().replace(tzinfo=None)
+    expires_utc = invitation.expires_at.replace(tzinfo=None) if invitation.expires_at.tzinfo else invitation.expires_at
+    if expires_utc < now_utc:
+        raise HTTPException(status_code=400, detail="Lien expiré")
+
+    return {"valid": True}
+
+
+# ============================================================
+# NOUVEL ENDPOINT — MOT DE PASSE OUBLIÉ (RH + MANAGER)
+# ============================================================
+
+@router.post("/forgot-password")
+def forgot_password(
+    payload: schemas.ForgotPasswordInput,
+    db: Session = Depends(get_db),
+):
+    """
+    Demande de réinitialisation de mot de passe (RH ou Manager).
+    - Réutilise InvitationToken (même table que l'invitation manager)
+    - Lien valable 1h, usage unique
+    - Réponse générique : ne révèle jamais si l'email existe (sécurité)
+    """
+    GENERIC_MESSAGE = "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."
+
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+
+    # Email inconnu ou compte inactif → même réponse, rien ne se passe
+    if not user or not user.is_active:
+        return {"message": GENERIC_MESSAGE}
+
+    # Générer un token de reset (1h, usage unique)
+    token = str(uuid.uuid4())
+    reset_token = models.InvitationToken(
+        token      = token,
+        user_id    = user.id,
+        expires_at = datetime.utcnow() + timedelta(hours=1),
+        used       = False,
+    )
+    db.add(reset_token)
+    db.commit()
+
+    reset_link = f"http://localhost:5173/reset-password?token={token}"
+
+    # Webhook n8n → envoie email de reset
+    try:
+        httpx.post(
+            "http://localhost:5678/webhook/forgot-password",
+            json={
+                "user_email": user.email,
+                "reset_link": reset_link,
+            },
+            timeout=5,
+        )
+    except Exception:
+        pass  # n8n indisponible — ne bloque pas, ne révèle rien
+
+    return {"message": GENERIC_MESSAGE}
+
 
 # ============================================================
 # NOUVEAUX ENDPOINTS — COMPTE MANAGER

@@ -6,7 +6,8 @@ import ApplicationForm   from "@/pages/ApplicationForm";
 import SetupPasswordPage from "@/pages/SetupPasswordPage";
 import TestPage          from "@/pages/TestPage";
 import CandidateBooking  from "./pages/CandidateBooking";
-
+import ForgotPasswordPage from "./pages/Forgotpasswordpage";
+import ResetPasswordPage from "./pages/Resetpasswordpage";
 // ── Pages manager
 import ManagerDashboard from "./pages/ManagerDashboard";
 import MissionRegistry  from "./pages/MissionRegistry";
@@ -89,6 +90,8 @@ function App() {
       <Route path="/setup-password" component={SetupPasswordPage} />
       <Route path="/test"           component={TestPage}          />
       <Route path="/booking"        component={CandidateBooking}  />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
 
       {/* ── Dashboard Manager */}
       <Route path="/dashboard">

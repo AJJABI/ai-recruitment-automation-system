@@ -199,13 +199,14 @@ function initials(name: string) {
 }
 
 function isDone(status: string): boolean {
-  return ["INTERVIEW_SCHEDULED", "INTERVIEW_DONE", 
-           "MANAGER_REJECTED", "ACCEPTED"].includes(status);
+  return ["INTERVIEW_SCHEDULED", "INTERVIEW_DONE",
+           "MANAGER_REJECTED", "ACCEPTED", "NO_SHOW"].includes(status);
 }
 
 function statusLabel(status: string): { label: string; color: string; bg: string; border: string } {
   const map: Record<string, { label: string; color: string; bg: string; border: string }> = {
     MANAGER_REJECTED:    { label: "Rejected",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
+    NO_SHOW:             { label: "No Show",    color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
     INTERVIEW_DONE:      { label: "Done",        color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
     INTERVIEW_SCHEDULED: { label: "Scheduled",  color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
     ACCEPTED:            { label: "Accepted",   color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd" },
@@ -319,8 +320,13 @@ export default function CandidateList() {
       .finally(() => setLoading(false));
   }, [jobId]);
 
-  // Rejected : REJECTED_AUTO + REJECTED_TECH (depuis backend) + MANAGER_REJECTED (dans la liste)
-  const rejectedTotal  = rejectedCount + candidates.filter(c => c.status_v2 === "MANAGER_REJECTED").length;
+  // NO_SHOW = rejetés définitifs — exclus de toutes les sections actives
+  const NO_SHOW_STATUSES = ["NO_SHOW"];
+
+  // Rejected : REJECTED_AUTO + REJECTED_TECH (backend) + MANAGER_REJECTED + NO_SHOW
+  const rejectedTotal  = rejectedCount + candidates.filter(c =>
+    c.status_v2 === "MANAGER_REJECTED" || NO_SHOW_STATUSES.includes(c.status_v2)
+  ).length;
   const totalAll       = candidates.length + rejectedCount;
 
   // Interviews : tous les statuts liés à l'entretien
@@ -333,11 +339,16 @@ export default function CandidateList() {
     ["PENDING", "PRESELECTED", "TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED"].includes(c.status_v2)
   ).length;
 
-  const preselected  = candidates.filter(c => c.group === "PRESELECTED");
-  const pendingList  = candidates.filter(c => c.group === "PENDING");
-  const inProgress   = candidates.filter(c => (c.group === "IN_PROGRESS" || c.group === "OTHER") && !["WAITING_MEET","MEET_PENDING"].includes(c.status_v2));
+  // NO_SHOW exclus de toutes les sections d'affichage
+  const preselected  = candidates.filter(c => c.group === "PRESELECTED" && !NO_SHOW_STATUSES.includes(c.status_v2));
+  const pendingList  = candidates.filter(c => c.group === "PENDING"      && !NO_SHOW_STATUSES.includes(c.status_v2));
+  const inProgress   = candidates.filter(c =>
+    (c.group === "IN_PROGRESS" || c.group === "OTHER") &&
+    !["WAITING_MEET", "MEET_PENDING"].includes(c.status_v2) &&
+    !NO_SHOW_STATUSES.includes(c.status_v2)
+  );
 
-  // Groupes post-test — séparés par score
+  // Groupes post-test — séparés par score (NO_SHOW exclus)
   const meetPending  = candidates.filter(c => c.status_v2 === "MEET_PENDING");       // score ≥ 70 — vert
   const waitingMeet  = candidates.filter(c => c.status_v2 === "WAITING_MEET");       // score 50-69 — orange
 

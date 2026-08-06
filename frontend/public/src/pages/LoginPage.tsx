@@ -399,7 +399,8 @@ export default function LoginPage() {
 
             <div className="fu5" style={{ marginTop: 20, textAlign: "center" }}>
               <a
-                href="#"
+                href="/forgot-password"
+                onClick={(e) => { e.preventDefault(); navigate("/forgot-password"); }}
                 style={{ fontSize: 13, color: "#7c3aed", textDecoration: "none", fontWeight: 500, transition: "color 0.2s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#5b21b6")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "#7c3aed")}

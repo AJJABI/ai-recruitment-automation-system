@@ -42,6 +42,8 @@ interface JobData {
   closed_at: string | null;
   test_validated: boolean | null;
   test_id_validated: string | null;
+  test_scheduled_at: string | null;   // ISO 8601 — date planifiée d'envoi du test
+  test_sent_at: string | null;        // ISO 8601 — date réelle d'envoi du test
 }
 
 interface Question {
@@ -330,6 +332,8 @@ export default function JobDetail() {
   const [sendError, setSendError]         = useState<string | null>(null);
   const [sent, setSent]                   = useState(false);
   const [sentCount, setSentCount]         = useState(0);
+  const [rescheduled, setRescheduled]     = useState(false);   // true si date modifiée sur test déjà planifié
+  const [editingDate, setEditingDate]     = useState(false);   // true si le Manager veut modifier la date
 
   // Expand selection (cycle 2 / cycle 3)
   const [expandPhase,    setExpandPhase]    = useState<"cycle2" | "cycle3" | null>(null);
@@ -359,7 +363,22 @@ export default function JobDetail() {
           skillsPlatform: (data.skills_json?.platform ?? []).join(", "),
           skillsMixed:    (data.skills_json?.mixed    ?? []).join(", "),
         });
-        if (data.test_validated && data.test_id_validated) setValidated(true);
+        if (data.test_validated && data.test_id_validated) {
+          setValidated(true);
+          // Hydrater l'état depuis la DB après refresh
+          if (data.test_scheduled_at) {
+            // Convertir ISO UTC → format datetime-local (YYYY-MM-DDTHH:MM)
+            const scheduledDate = new Date(data.test_scheduled_at);
+            const localISO = new Date(scheduledDate.getTime() - scheduledDate.getTimezoneOffset() * 60000)
+              .toISOString()
+              .slice(0, 16);
+            setSendDate(localISO);
+            // Déterminer si le test est déjà envoyé ou juste planifié
+            const isAlreadySent = data.test_sent_at != null;
+            setSent(true);
+            setRescheduled(false);
+          }
+        }
       })
       .catch(err => setJobError(err instanceof Error ? err.message : "Unknown error"))
       .finally(() => setLoadingJob(false));
@@ -469,6 +488,8 @@ export default function JobDetail() {
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? e.detail ?? `Error (${res.status})`); }
       const data = await res.json().catch(() => ({}));
       setValidated(true); setSent(true); setSentCount(data.candidates_count ?? data.sent_count ?? 1);
+      if (data.rescheduled) { setRescheduled(true); }
+      setEditingDate(false);
     } catch (err) {
       clearTimeout(timeoutId);
       if (err instanceof Error && err.name === "AbortError") {
@@ -774,6 +795,162 @@ export default function JobDetail() {
 
               <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", flex: 1 }}>
 
+                {/* ── Already scheduled (loaded from DB after refresh) ── */}
+                {!generatedTest && job?.test_validated && job?.test_scheduled_at && !editingDate && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {/* Scheduled banner */}
+                    <div style={{
+                      padding: "14px 16px", borderRadius: 12,
+                      background: "#f0fdf4", border: "1px solid #bbf7d0",
+                      display: "flex", flexDirection: "column", gap: 6,
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <CheckCircle2 size={15} color="#16a34a" />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#16a34a" }}>
+                          Test Scheduled
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11, color: "#64748b", paddingLeft: 23 }}>
+                        {job.test_id_validated}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#15803d", paddingLeft: 23 }}>
+                        📅 Send date: {new Date(job.test_scheduled_at).toLocaleString("en-GB", {
+                          day: "2-digit", month: "2-digit", year: "numeric",
+                          hour: "2-digit", minute: "2-digit"
+                        })}
+                      </span>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {/* Reschedule */}
+                      <button
+                        onClick={() => {
+                          const scheduledDate = new Date(job.test_scheduled_at!);
+                          const localISO = new Date(scheduledDate.getTime() - scheduledDate.getTimezoneOffset() * 60000)
+                            .toISOString().slice(0, 16);
+                          setSendDate(localISO);
+                          setEditingDate(true);
+                          setRescheduled(false);
+                          setValidateError(null);
+                          if (!generatedTest && job.test_id_validated) {
+                            fetch(`${API_BASE}/tests/${job.test_id_validated}`, { headers: authHeaders() })
+                              .then(r => r.ok ? r.json() : null)
+                              .then(d => { if (d) setGeneratedTest({ test_id: d.test_id, questions: d.questions ?? [] }); })
+                              .catch(() => {});
+                          }
+                        }}
+                        style={{
+                          padding: "9px 0", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                          border: "1px solid #cbd5e1", background: "#f8fafc",
+                          color: "#475569", cursor: "pointer", width: "100%",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        ✏️ Reschedule send date
+                      </button>
+
+                      {/* Regenerate test */}
+                      <button
+                        onClick={handleRegenerate}
+                        disabled={generating}
+                        style={{
+                          padding: "9px 0", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                          border: "1px solid #e2e8f0", background: "#f1f5f9",
+                          color: "#64748b", cursor: generating ? "not-allowed" : "pointer", width: "100%",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        <RefreshCw size={12} style={{ animation: generating ? "spin 1s linear infinite" : "none" }} />
+                        {generating ? "Regenerating…" : "Regenerate test"}
+                      </button>
+
+                      {/* Generate new test */}
+                      <button
+                        onClick={() => {
+                          setGeneratedTest(null);
+                          setValidated(false);
+                          setSent(false);
+                          setRescheduled(false);
+                          setEditingDate(false);
+                          setSendDate("");
+                          setValidateError(null);
+                          setGenerateError(null);
+                        }}
+                        style={{
+                          padding: "9px 0", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                          border: "1px solid #e2e8f0", background: "#f1f5f9",
+                          color: "#64748b", cursor: "pointer", width: "100%",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        ⚡ Generate new test
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Edit send date form ── */}
+                {!generatedTest && job?.test_validated && job?.test_scheduled_at && editingDate && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px solid rgba(240,235,255,0.7)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: "#fffbeb", border: "1px solid #fde68a" }}>
+                      <AlertCircle size={14} color="#d97706" />
+                      <span style={{ fontSize: 12, color: "#92400e" }}>
+                        Rescheduling — currently scheduled for {new Date(job.test_scheduled_at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    {validateError && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "#fef2f2", border: "1px solid #fca5a5" }}>
+                        <AlertCircle size={14} color="#ef4444" />
+                        <span style={{ fontSize: 12, color: "#991b1b" }}>{validateError}</span>
+                      </div>
+                    )}
+                    <div>
+                      <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.12em", marginBottom: 6, textTransform: "uppercase" }}>
+                        New send date
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={sendDate}
+                        onChange={e => setSendDate(e.target.value)}
+                        min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                        style={{
+                          width: "100%", padding: "9px 12px", borderRadius: 10, fontSize: 13,
+                          border: "1px solid rgba(255,255,255,0.7)",
+                          background: "rgba(255,255,255,0.65)", backdropFilter: "blur(6px)",
+                          color: "#1c2a38", outline: "none", boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => { setEditingDate(false); setValidateError(null); }}
+                        style={{
+                          flex: 1, padding: "9px 0", borderRadius: 10, fontSize: 12, fontWeight: 600,
+                          border: "1px solid #cbd5e1", background: "#f8fafc", color: "#475569", cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleValidateAndSend}
+                        disabled={sendLoading || !sendDate}
+                        style={{
+                          flex: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          padding: "9px 0", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                          border: "none", cursor: !sendDate || sendLoading ? "not-allowed" : "pointer",
+                          background: sendDate && !sendLoading ? "linear-gradient(135deg,#0d9488,#0f766e)" : "#e2e8f0",
+                          color: sendDate && !sendLoading ? "#fff" : "#94a3b8",
+                          boxShadow: sendDate && !sendLoading ? "0 2px 8px rgba(13,148,136,0.3)" : "none",
+                        }}
+                      >
+                        <Send size={13} />
+                        {sendLoading ? "Updating…" : "Confirm new date"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Generated questions ── */}
                 {generatedTest && (() => {
                   const start = questionPage * QUESTIONS_PER_PAGE;
@@ -874,19 +1051,32 @@ export default function JobDetail() {
                       )}
 
                       {/* Scheduled send */}
-                      {sent ? (
+                      {sent && !editingDate ? (
                         <div style={{
                           padding: "12px 16px", borderRadius: 12,
-                          background: "#f0fdf4", border: "1px solid #bbf7d0",
-                          display: "flex", flexDirection: "column", gap: 4,
+                          background: rescheduled ? "#fffbeb" : "#f0fdf4",
+                          border: `1px solid ${rescheduled ? "#fde68a" : "#bbf7d0"}`,
+                          display: "flex", flexDirection: "column", gap: 8,
                         }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <CheckCircle2 size={15} color="#16a34a" />
-                            <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>
-                              Scheduled test — send on {new Date(sendDate).toLocaleString("en-US", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            <CheckCircle2 size={15} color={rescheduled ? "#d97706" : "#16a34a"} />
+                            <span style={{ fontSize: 12, color: rescheduled ? "#92400e" : "#16a34a", fontWeight: 700 }}>
+                              {rescheduled
+                                ? `Date modifiée — nouveau envoi prévu le ${new Date(sendDate).toLocaleString("en-US", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                                : `Scheduled test — send on ${new Date(sendDate).toLocaleString("en-US", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                              }
                             </span>
                           </div>
-                          
+                          <button
+                            onClick={() => { setEditingDate(true); setRescheduled(false); setValidateError(null); }}
+                            style={{
+                              alignSelf: "flex-start", padding: "5px 12px", borderRadius: 8,
+                              fontSize: 11, fontWeight: 600, border: "1px solid #cbd5e1",
+                              background: "#f8fafc", color: "#475569", cursor: "pointer",
+                            }}
+                          >
+                            Change the sending date
+                          </button>
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px solid rgba(240,235,255,0.7)" }}>
@@ -943,7 +1133,7 @@ export default function JobDetail() {
                 <form
                   id="generate-form"
                   onSubmit={handleGenerate}
-                  style={{ display: generatedTest ? "none" : "flex", flexDirection: "column", gap: 16 }}
+                  style={{ display: (generatedTest || (job?.test_validated && job?.test_scheduled_at)) ? "none" : "flex", flexDirection: "column", gap: 16 }}
                 >
                   {/* Generation error */}
                   {generateError && (

@@ -34,6 +34,8 @@ class Job(Base):
     test_duration       = Column(Integer,  default=60)     # durée en minutes
     test_validated      = Column(Boolean,  default=False)  # True quand Manager valide
     test_id_validated   = Column(String,   nullable=True)  # ID test validé
+    test_scheduled_at   = Column(DateTime, nullable=True)  # date planifiée d'envoi du test
+    test_sent_at        = Column(DateTime, nullable=True)  # date réelle d'envoi du test
 
     # ── Langue du poste ──────────────────────────────────────
     # "fr" → poste en français, "en" → poste en anglais
@@ -102,6 +104,7 @@ class Application(Base):
             "MANAGER_VALIDATED",         # manager valide groupe 1
             "MANAGER_TO_DEEPEN",         # manager approfondit groupe 2
             "MANAGER_REJECTED",          # manager rejette
+            "NO_SHOW",                   # candidat no-show à l'entretien
 
             # Phase 6 — Décision finale
             "ACCEPTED",                  # retenu pour entretien présentiel RH
@@ -343,7 +346,7 @@ class BookingToken(Base):
     token          = Column(String, unique=True, index=True, nullable=False)
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
     job_id         = Column(Integer, ForeignKey("jobs.id"),         nullable=False)
-    expires_at     = Column(DateTime, nullable=False)   # +48h
+    expires_at     = Column(DateTime(timezone=True), nullable=False)   # +48h — timezone-aware
     used           = Column(Boolean,  default=False)
     created_at     = Column(DateTime, server_default=func.now())
 

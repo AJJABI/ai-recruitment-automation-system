@@ -386,7 +386,7 @@ export default function RHCandidateReport() {
   const [toast,      setToast]      = useState<{ msg: string; type: "ok" | "err" } | null>(null);
 
   // Scores visibility
-  const [scoresVisible, setScoresVisible] = useState(true);
+  const [scoresVisible, setScoresVisible] = useState(false);
 
   // Calendar state
   const [showCalendar,  setShowCalendar]  = useState(false);

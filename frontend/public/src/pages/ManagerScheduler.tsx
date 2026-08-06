@@ -345,14 +345,14 @@ export default function ManagerScheduler() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setToast({ msg: err.detail ?? "Erreur lors de l'envoi des invitations.", type: "err" });
+        setToast({ msg: err.detail ?? "Error sending invitations.", type: "err" });
       } else {
         const data = await res.json().catch(() => ({}));
         const count = data.tokens?.length ?? data.message ?? "?";
-        setToast({ msg: `✅ Invitations envoyées (${typeof count === "number" ? count : count})`, type: "ok" });
+        setToast({ msg: `✅ Invitations sent `, type: "ok" });
       }
     } catch {
-      setToast({ msg: "Impossible de contacter n8n.", type: "err" });
+      setToast({ msg: "Error contacting n8n.", type: "err" });
     } finally {
       setSendingInv(false);
     }
@@ -377,7 +377,7 @@ export default function ManagerScheduler() {
         setToast({ msg: data.message ?? "Erreur lors du relancement.", type: "err" });
       }
     } catch {
-      setToast({ msg: "Impossible de contacter n8n.", type: "err" });
+      setToast({ msg: "Error contacting n8n.", type: "err" });
     } finally {
       setRelancerLoading(false);
     }
@@ -578,7 +578,7 @@ export default function ManagerScheduler() {
                     {relancerLoading ? (
                       <><span style={{ width: 14, height: 14, border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Relancement...</>
                     ) : (
-                      <>⬆️ Restart selection ({waitingCandidates.length})</>
+                      <> Restart selection </>
                     )}
                   </button>
                 )}

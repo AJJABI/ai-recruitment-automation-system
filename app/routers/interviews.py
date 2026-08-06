@@ -10,6 +10,9 @@ import uuid
 import os
 import base64
 import requests as http_requests
+from datetime import timezone
+from sqlalchemy import func, text
+
 
 # ============================================================
 # ZOOM MEET — Server-to-Server OAuth
@@ -248,14 +251,15 @@ def get_available_slots(job_id: int, token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Invalid link")
     if booking_token.used:
         raise HTTPException(status_code=400, detail="Link already used")
-    if booking_token.expires_at < datetime.utcnow():
+    if booking_token.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Link expired")
 
-    slots = db.query(models.InterviewSlot).filter(
-        models.InterviewSlot.job_id == job_id
-    ).order_by(models.InterviewSlot.datetime).all()
+    slots = db.query(models.Interview).filter(
+        models.Interview.job_id == job_id, 
+        models.Interview.status == "available"
+    ).order_by(models.Interview.scheduled_at).all()
 
-    return [{"slot_id": slot.id, "datetime": slot.datetime, "is_available": slot.is_available} for slot in slots]
+    return [{"slot_id": slot.id, "datetime": slot.scheduled_at, "is_available": True} for slot in slots]
 
 
 @router.post("/book")
@@ -265,7 +269,7 @@ def book_slot(payload: BookingInput, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Invalid link")
     if booking_token.used:
         raise HTTPException(status_code=400, detail="Link already used")
-    if booking_token.expires_at < datetime.utcnow():
+    if booking_token.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Link expired")
 
     # Récupérer infos candidat avant de chercher le slot
@@ -324,13 +328,17 @@ def generate_booking_tokens(
             detail="No eligible candidates (MEET_PENDING) for this job"
         )
 
-    # Calculer la date d'expiration = dernier créneau disponible du job
+    # Calculer la date d'expiration = dernier créneau FUTUR disponible du job
+    now_utc = datetime.now(timezone.utc)
+
     last_slot = db.query(models.Interview).filter(
-        models.Interview.job_id == job_id,
-        models.Interview.status == "available"
+        models.Interview.job_id    == job_id,
+        models.Interview.status    == "available",
+        models.Interview.scheduled_at > now_utc
     ).order_by(models.Interview.scheduled_at.desc()).first()
 
-    expires_at = last_slot.scheduled_at if last_slot else datetime.utcnow() + timedelta(days=2)
+    expires_at = last_slot.scheduled_at if last_slot else datetime.now(timezone.utc) + timedelta(days=2)
+
 
     tokens_created = []
     job            = db.query(models.Job).filter(models.Job.id == job_id).first()
@@ -345,18 +353,23 @@ def generate_booking_tokens(
             models.BookingToken.used == False
         ).first()
         if existing:
-            # Mettre à jour la date d'expiration avec la nouvelle date calculée
-            existing.expires_at = expires_at
-            tokens_created.append({
-                "application_id"  : app.id,
-                "candidate_email" : app.candidate_email,
-                "candidate_name"  : candidate_name,
-                "job_title"       : job_title,
-                "token"           : existing.token,
-                "link"            : f"http://localhost:5173/booking?token={existing.token}&job_id={job_id}",
-                "expires_at"      : existing.expires_at
-            })
-            continue
+            if existing.expires_at < datetime.now(timezone.utc):
+                # Token expiré → supprimer et créer un nouveau
+                db.delete(existing)
+                db.flush()
+            else:
+                # Token encore valide → mettre à jour expires_at
+                existing.expires_at = expires_at
+                tokens_created.append({
+                    "application_id"  : app.id,
+                    "candidate_email" : app.candidate_email,
+                    "candidate_name"  : candidate_name,
+                    "job_title"       : job_title,
+                    "token"           : existing.token,
+                    "link"            : f"http://localhost:5173/booking?token={existing.token}&job_id={job_id}",
+                    "expires_at"      : existing.expires_at
+                })
+                continue
 
         token = models.BookingToken(
             token          = str(uuid.uuid4()),
@@ -388,7 +401,7 @@ def generate_booking_tokens(
 
 @router.get("/booking-tokens/expired")
 def get_expired_tokens(db: Session = Depends(get_db)):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     expired_tokens = db.query(models.BookingToken).filter(
         models.BookingToken.used       == False,
@@ -464,7 +477,7 @@ def get_no_show_slots(db: Session = Depends(get_db)):
     et qui concernent UNIQUEMENT la phase d'évaluation technique (round != "HR Round").
 
     n8n appelle cet endpoint puis pour chaque résultat :
-      - PATCH /interviews/slots/{slot_id}/absent  → marque MANAGER_REJECTED + libère le créneau
+      - PATCH /interviews/slots/{slot_id}/absent  → marque NO_SHOW + libère le créneau
       - Envoie un email au candidat l'informant de son absence
 
     Idempotent : les candidats déjà traités sont exclus du résultat pour éviter les doublons.
@@ -478,18 +491,18 @@ def get_no_show_slots(db: Session = Depends(get_db)):
       (ACCEPTED = "Validate"), même si
       un ancien slot technique est encore "booked" et non nettoyé.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Fix 1 : exclure les créneaux RH (round = "HR Round")
     slots = db.query(models.Interview).filter(
         models.Interview.status         == "booked",
-        models.Interview.scheduled_at   <  now,
+        models.Interview.scheduled_at < func.now() - text("INTERVAL '5 minutes'"),
         models.Interview.round          != "HR Round",
     ).all()
 
     # Fix 2 : statuts exclus étendus
     EXCLUDED_STATUSES = [
-        "MANAGER_REJECTED",  # déjà rejeté par ce workflow
+        "NO_SHOW",  # déjà rejeté par ce workflow
         "INTERVIEW_DONE",    # entretien marqué fait
         "HIRED",             # embauché (statut final RH)
         "REJECTED_FINAL",    # rejeté définitivement (NON_RETENU)
@@ -626,7 +639,19 @@ def list_dashboard_slots(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("MANAGER", "RH"))
 ):
+    # Un manager ne doit voir/interroger que les jobs qui lui sont assignés.
+    manager_job_ids = None
+    if current_user.role == "MANAGER":
+        manager_job_ids = [
+            mj.job_id for mj in db.query(models.ManagerJob)
+            .filter(models.ManagerJob.manager_id == current_user.id).all()
+        ]
+        if job_id is not None and job_id not in manager_job_ids:
+            raise HTTPException(status_code=403, detail="You are not assigned to this job")
+
     q = db.query(models.Interview).order_by(models.Interview.scheduled_at)
+    if manager_job_ids is not None:
+        q = q.filter(models.Interview.job_id.in_(manager_job_ids))
     if month:
         year, mon = month.split("-")
         from sqlalchemy import extract
@@ -672,6 +697,11 @@ def create_dashboard_slot(
     current_user: models.User = Depends(require_role("MANAGER", "RH"))
 ):
     """Crée un créneau et génère automatiquement un lien Zoom."""
+    # ⚠️ scheduled_at reste NAIVE volontairement — ne pas ajouter tzinfo=timezone.utc ici.
+    # Interview.scheduled_at est un TIMESTAMPTZ : Postgres interprète un datetime naive
+    # comme étant déjà dans la timezone de session (locale), donc l'heure tapée par le
+    # manager est stockée et relue telle quelle, sans décalage. Taguer explicitement UTC
+    # ferait convertir Postgres (+1h avec une session en Africa/Tunis) → bug de décalage.
     scheduled_at = datetime.strptime(f"{body.date} {body.start_time}", "%Y-%m-%d %H:%M")
 
     if scheduled_at.date() < datetime.utcnow().date():
@@ -686,18 +716,33 @@ def create_dashboard_slot(
     duration = max(duration, 15)
 
     # ── Vérification conflit horaire par job : pas deux slots qui se chevauchent pour le même job ──
+    # Fix 1 : on compare l'intervalle réel de CHAQUE créneau existant (sa propre duration_minutes)
+    # à l'intervalle du nouveau créneau, au lieu d'appliquer la durée du nouveau créneau à tout le monde.
+    # Fix 2 : on exclut les créneaux annulés — un slot "cancelled" ne doit plus bloquer une création.
     end_scheduled = scheduled_at + timedelta(minutes=duration)
     from sqlalchemy import func as sqlfunc
-    conflict_q = db.query(models.Interview).filter(
+
+    same_day_q = db.query(models.Interview).filter(
         sqlfunc.date(models.Interview.scheduled_at) == scheduled_at.date(),
-        models.Interview.scheduled_at < end_scheduled,
-        models.Interview.scheduled_at + timedelta(minutes=duration) > scheduled_at,
+        models.Interview.status != "cancelled",
     )
     if body.job_id:
-        conflict_q = conflict_q.filter(models.Interview.job_id == body.job_id)
-    existing = conflict_q.first()
+        same_day_q = same_day_q.filter(models.Interview.job_id == body.job_id)
+
+    existing = None
+    for row in same_day_q.all():
+        # row.scheduled_at revient toujours aware depuis Postgres (TIMESTAMPTZ), même si
+        # l'insertion était naive → on retire juste le tzinfo pour comparer en Python,
+        # sans jamais réécrire ni convertir la valeur stockée.
+        row_scheduled = row.scheduled_at.replace(tzinfo=None) if row.scheduled_at.tzinfo else row.scheduled_at
+        row_end = row_scheduled + timedelta(minutes=row.duration_minutes)
+        if row_scheduled < end_scheduled and row_end > scheduled_at:
+            existing = row
+            break
+
     if existing:
-        existing_end = existing.scheduled_at + timedelta(minutes=existing.duration_minutes)
+        existing_scheduled = existing.scheduled_at.replace(tzinfo=None) if existing.scheduled_at.tzinfo else existing.scheduled_at
+        existing_end = existing_scheduled + timedelta(minutes=existing.duration_minutes)
         raise HTTPException(
             status_code=409,
             detail=(
@@ -945,14 +990,27 @@ def get_manager_today(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("MANAGER", "RH"))
 ):
-    today = datetime.now().date()
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
 
-    dashboard_today = db.query(models.Interview).filter(
+    start_of_day = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    end_of_day   = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
+
+    # Jobs assignés au manager connecté — calculé en amont pour filtrer dashboard_today
+    manager_job_rows = db.query(models.ManagerJob).filter(models.ManagerJob.manager_id == current_user.id).all()
+    job_ids = [mj.job_id for mj in manager_job_rows]
+
+    dashboard_today_q = db.query(models.Interview).filter(
         models.Interview.candidate_name != "",
         models.Interview.status.in_(["scheduled", "booked"]),
-        models.Interview.scheduled_at >= datetime.combine(today, datetime.min.time()),
-        models.Interview.scheduled_at <  datetime.combine(today, datetime.max.time()),
-    ).order_by(models.Interview.scheduled_at).all()
+        models.Interview.scheduled_at >= start_of_day,
+        models.Interview.scheduled_at <  end_of_day,
+    )
+    if current_user.role == "MANAGER":
+        # Un manager ne doit voir que les entretiens des jobs qui lui sont assignés.
+        # Le RH garde une vue globale (aucun filtre supplémentaire).
+        dashboard_today_q = dashboard_today_q.filter(models.Interview.job_id.in_(job_ids))
+    dashboard_today = dashboard_today_q.order_by(models.Interview.scheduled_at).all()
 
     slot_today = db.query(models.InterviewSlot).filter(
         models.InterviewSlot.manager_id   == current_user.id,
@@ -964,7 +1022,7 @@ def get_manager_today(
     today_interviews = []
 
     for iv in dashboard_today:
-        now   = datetime.now()
+        now   = now_utc
         start = iv.scheduled_at
         end   = start + timedelta(minutes=iv.duration_minutes)
         status = "live" if start <= now <= end else ("done" if now > end else "upcoming")
@@ -1003,8 +1061,6 @@ def get_manager_today(
     today_interviews.sort(key=lambda x: x["start_time"])
 
     pending_actions = []
-    manager_job_rows = db.query(models.ManagerJob).filter(models.ManagerJob.manager_id == current_user.id).all()
-    job_ids = [mj.job_id for mj in manager_job_rows]
 
     for job_id in job_ids:
         job = db.query(models.Job).filter(models.Job.id == job_id).first()
@@ -1123,12 +1179,10 @@ def mark_candidate_absent(
             models.Application.candidate_email == candidate_email
         ).first()
         if app:
-            app.status_v2 = "MANAGER_REJECTED"
+            app.status_v2 = "NO_SHOW"
 
-    row.status          = "available"
-    row.candidate_name  = ""
-    row.candidate_email = ""
-    row.meeting_link    = None
+    db.delete(row)
+    db.commit()
 
     db.commit()
     return {"message": "Candidate rejected, slot released", "slot_id": slot_id}
@@ -1166,30 +1220,36 @@ def get_rejected_auto_candidates(
     current_user: models.User = Depends(require_role("MANAGER", "RH"))
 ):
     """
-    Retourne les candidats dont le token a expiré sans réservation (REJECTED_AUTO)
-    pour un job donné, avec leur nom, email et date d'expiration du token.
+    Retourne uniquement les candidats REJECTED_AUTO qui ont reçu une invitation
+    d'entretien (BookingToken existant) mais n'ont pas réservé = vrais No-Shows.
+    Exclut les candidats rejetés pour lien test expiré (sans BookingToken).
     """
     apps = db.query(models.Application).filter(
-        models.Application.job_id   == job_id,
+        models.Application.job_id    == job_id,
         models.Application.status_v2 == "REJECTED_AUTO"
     ).all()
 
     result = []
     for app in apps:
-        cv = db.query(models.CVProfile).filter(
-            models.CVProfile.application_id == app.id
-        ).first()
-
+        # Vérifier qu'un BookingToken existe = candidat a reçu une invitation entretien
         token = db.query(models.BookingToken).filter(
             models.BookingToken.application_id == app.id,
             models.BookingToken.job_id         == job_id,
         ).order_by(models.BookingToken.expires_at.desc()).first()
 
+        # Ignorer les candidats sans BookingToken (rejetés pour lien test expiré)
+        if not token:
+            continue
+
+        cv = db.query(models.CVProfile).filter(
+            models.CVProfile.application_id == app.id
+        ).first()
+
         result.append({
             "application_id"  : app.id,
             "candidate_name"  : cv.full_name if cv else app.candidate_email,
             "candidate_email" : app.candidate_email,
-            "expired_at"      : token.expires_at if token else None,
+            "expired_at"      : token.expires_at,
         })
 
     return {"count": len(result), "candidates": result}

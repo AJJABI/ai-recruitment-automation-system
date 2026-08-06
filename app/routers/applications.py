@@ -28,6 +28,38 @@ router = APIRouter()
 
 os.makedirs("uploads", exist_ok=True)
 
+
+def _flatten_job_skills(job) -> str:
+    """
+    BUG-SKILLS-OVERLAP FIX :
+    Construit une chaîne 'skill1, skill2, skill3' depuis skills_json
+    (coding + platform + mixed) au lieu d'utiliser skills_required (texte libre).
+
+    skills_required est une description longue en langage naturel
+    (ex: "Solid fundamentals in Python and JavaScript/TypeScript...") —
+    splittée sur ',' / ';' dans _check_skills_overlap(), elle produit des
+    fragments de phrases au lieu de vraies compétences, ce qui plafonne
+    artificiellement le score motivation (ex: 1/7 au lieu de 5/5).
+
+    skills_json est la liste structurée saisie par le RH à la création du
+    job (coding_skills, platform_skills, mixed_skills) — c'est la source
+    fiable pour le matching skills-overlap.
+
+    Fallback sur skills_required uniquement si skills_json est vide/absent.
+    """
+    if not job:
+        return ""
+    if isinstance(job.skills_json, dict):
+        all_skills = []
+        for cat in ["coding", "platform", "mixed"]:
+            all_skills.extend(job.skills_json.get(cat, []))
+        if job.bonus_skills:
+            bonus = job.bonus_skills if isinstance(job.bonus_skills, list) else []
+            all_skills.extend(bonus)
+        if all_skills:
+            return ", ".join(all_skills)
+    return job.skills_required or ""
+
 # Secret partagé entre n8n et FastAPI pour les appels machine-to-machine.
 # Même valeur que dans tests.py — définie dans .env via N8N_SECRET.
 N8N_SECRET = os.getenv("N8N_SECRET", "mon-secret-n8n")
@@ -195,6 +227,10 @@ async def apply_job(
     if job.closed_at:
         raise HTTPException(status_code=400, detail="This job offer is closed and no longer accepting applications.")
 
+    from datetime import datetime
+    if job.date_expiration and job.date_expiration < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This job offer has expired and is no longer accepting applications.")
+
     # ── Vérifier si candidat a déjà postulé à ce job ─────────────────────────
     existing = db.query(Application).filter(
         Application.job_id          == job_id,
@@ -265,6 +301,7 @@ async def apply_job(
     db.commit()
 
     # ── 5. Pipeline en arrière-plan → réponse immédiate ─────────────────────
+    job_skills_flat = _flatten_job_skills(job)  # BUG-SKILLS-OVERLAP FIX
     n8n_payload = {
         "application_id"  : application.id,
         "job_id"          : job_id,
@@ -273,7 +310,7 @@ async def apply_job(
         "letter_path"     : letter_path,
         "job_title"       : job.title           or "",
         "job_description" : job.description     or "",
-        "job_skills"      : job.skills_required or "",
+        "job_skills"      : job_skills_flat,
         "job_company"     : job.company         or "",
         "job_level"       : job.level           or "",
         "coding_skills"   : job.skills_json.get("coding", [])   if isinstance(job.skills_json, dict) else [],
@@ -291,7 +328,7 @@ async def apply_job(
         letter_path     = letter_path,
         job_title       = job.title           or "",
         job_description = job.description     or "",
-        job_skills      = job.skills_required or "",
+        job_skills      = job_skills_flat,  # BUG-SKILLS-OVERLAP FIX
         job_company     = job.company         or "",
         n8n_payload     = n8n_payload,
     )
@@ -383,13 +420,14 @@ async def _run_pipeline_background(
 
         # Motivation Agent
         motivation_result = run_motivation_agent(
-            letter_path     = letter_path,
-            job_title       = job_title,
-            job_description = job_description,
-            job_skills      = job_skills,
-            job_company     = job_company,
-            application_id  = application_id,
-            db              = db,
+            letter_path         = letter_path,
+            job_title           = job_title,
+            job_description     = job_description,
+            job_skills          = job_skills,
+            job_company         = job_company,
+            years_experience_cv = cv_profile.years_experience,  # BUG-SENIORITY-LOGIC FIX
+            application_id      = application_id,
+            db                  = db,
         )
         motivation_result = motivation_result or {}
         score_motivation  = int(motivation_result.get("score_motivation", 50) or 50)
@@ -1513,17 +1551,25 @@ async def run_motivation_endpoint(
 
     job = db.query(Job).filter(Job.id == application.job_id).first()
 
+    # BUG-SENIORITY-LOGIC FIX : récupérer l'XP CV déjà parsée pour éviter
+    # le faux positif "profil junior" sur simple mention du mot "stage"
+    cv_profile = db.query(CVProfile).filter(
+        CVProfile.application_id == application_id
+    ).first()
+    years_experience_cv = cv_profile.years_experience if cv_profile else None
+
     try:
         result = await run_in_threadpool(
             run_motivation_agent,
-            letter_path     = application.letter_path,
-            job_title       = job.title           if job else "",
-            job_description = job.description     if job else "",
-            job_skills      = job.skills_required if job else "",
-            job_company     = job.company         if job else "",
-            application_id  = application_id,
-            job_lang        = getattr(job, "lang", None) or "fr",
-            db              = db,
+            letter_path         = application.letter_path,
+            job_title           = job.title           if job else "",
+            job_description     = job.description     if job else "",
+            job_skills          = _flatten_job_skills(job),  # BUG-SKILLS-OVERLAP FIX
+            job_company         = job.company         if job else "",
+            application_id      = application_id,
+            job_lang            = getattr(job, "lang", None) or "fr",
+            years_experience_cv = years_experience_cv,  # BUG-SENIORITY-LOGIC FIX
+            db                  = db,
         )
         result = result or {}
         return {

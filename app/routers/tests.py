@@ -211,8 +211,11 @@ def regenerate_test(
 @router.get("/expired-links")
 def get_expired_test_links(db: Session = Depends(get_db)):
     """
-    Retourne les candidats en statut TEST_SENT dont test_expires_at est dépassé.
-    Le lien de test (valable 24h) n'a pas été utilisé par le candidat.
+    Retourne les candidats en statut TEST_SENT ou TEST_IN_PROGRESS
+    dont test_expires_at est dépassé.
+
+    - TEST_SENT        : candidat n'a jamais ouvert le lien (lien 24h expiré)
+    - TEST_IN_PROGRESS : candidat a ouvert mais n'a pas soumis (timer 60min expiré)
 
     n8n appelle cet endpoint toutes les heures (Schedule Trigger),
     puis pour chaque résultat :
@@ -222,7 +225,7 @@ def get_expired_test_links(db: Session = Depends(get_db)):
     now = datetime.utcnow()
 
     expired_apps = db.query(models.Application).filter(
-        models.Application.status_v2       == "TEST_SENT",
+        models.Application.status_v2.in_(["TEST_SENT", "TEST_IN_PROGRESS"]),
         models.Application.test_expires_at <= now,
     ).all()
 
@@ -260,7 +263,10 @@ def expire_test_link(
 ):
     """
     Appelé par n8n pour chaque candidat dont le lien de test a expiré.
-    Passe le statut TEST_SENT → TEST_EXPIRED et loggue l'événement.
+    Passe le statut TEST_SENT ou TEST_IN_PROGRESS → REJECTED_AUTO et loggue l'événement.
+
+    - TEST_SENT        : candidat n'a jamais ouvert le lien
+    - TEST_IN_PROGRESS : candidat a ouvert mais n'a pas soumis dans les 60 min
 
     Idempotent : si le statut a déjà changé (candidat a soumis entre-temps),
     retourne silencieusement sans erreur.
@@ -272,10 +278,10 @@ def expire_test_link(
         raise HTTPException(status_code=404, detail="Application non trouvée")
 
     # Idempotence — déjà soumis ou déjà expiré
-    if app.status_v2 != "TEST_SENT":
+    if app.status_v2 not in ("TEST_SENT", "TEST_IN_PROGRESS"):
         return {
-            "message"      : "Statut déjà mis à jour — aucune action effectuée",
-            "status_v2"    : app.status_v2,
+            "message"       : "Statut déjà mis à jour — aucune action effectuée",
+            "status_v2"     : app.status_v2,
             "application_id": application_id,
         }
 
@@ -352,11 +358,68 @@ def validate_test(
             detail="send_date doit être dans le futur",
         )
 
-    # ── 3. Marquer le job comme validé ───────────────────────────────────────
+    # ── 3. Détecter si déjà planifié (reschedule) ───────────────────────────
+    already_scheduled = (
+        job.test_validated and
+        job.test_id_validated == test_id
+    )
+    already_ready_count = db.query(models.Application).filter(
+        models.Application.job_id    == payload.job_id,
+        models.Application.status_v2.in_(["TEST_READY", "TEST_SENT", "TEST_IN_PROGRESS", "TEST_COMPLETED"]),
+    ).count()
+
+    if already_scheduled and already_ready_count > 0:
+        # ── Reschedule : test déjà planifié, mise à jour de la date ─────────
+        job.test_scheduled_at = send_date_dt   # persister la nouvelle date
+        db.commit()
+        # Récupérer les candidats déjà en attente du test
+        test_apps = db.query(models.Application).filter(
+            models.Application.job_id    == payload.job_id,
+            models.Application.status_v2.in_(["TEST_READY", "TEST_SENT", "TEST_IN_PROGRESS"]),
+        ).all()
+
+        send_date_fr = send_date_dt.strftime("%d/%m/%Y à %H:%M")
+        candidates_rescheduled = []
+        for app in test_apps:
+            cv_profile = db.query(models.CVProfile).filter(
+                models.CVProfile.application_id == app.id
+            ).first()
+            candidates_rescheduled.append({
+                "application_id"  : app.id,
+                "candidate_email" : app.candidate_email,
+                "candidate_name"  : cv_profile.full_name if cv_profile else "Candidat",
+            })
+
+        # Notifier le RH que la date a été modifiée
+        rh_users = db.query(models.User).filter(models.User.role == "RH").all()
+        for rh in rh_users:
+            from app.routers.notifications import create_notification
+            create_notification(
+                db,
+                user_id = rh.id,
+                message = f"Date d'envoi du test modifiée pour '{job.title}' → {send_date_fr} ({len(candidates_rescheduled)} candidats concernés)",
+                type    = "warning",
+                link    = f"/job/{payload.job_id}",
+            )
+
+        return {
+            "send_date"        : payload.send_date,
+            "send_date_fr"     : send_date_fr,
+            "test_id"          : test_id,
+            "job_id"           : payload.job_id,
+            "job_title"        : job.title,
+            "candidates"       : candidates_rescheduled,
+            "candidates_count" : len(candidates_rescheduled),
+            "rescheduled"      : True,
+            "message"          : f"Date mise à jour — test renvoyé le {send_date_fr}",
+        }
+
+    # ── 4. Marquer le job comme validé ───────────────────────────────────────
     job.test_validated    = True
     job.test_id_validated = test_id
+    job.test_scheduled_at = send_date_dt   # persister la date planifiée
 
-    # ── 4. Passer PRESELECTED → TEST_READY ───────────────────────────────────
+    # ── 5. Passer PRESELECTED → TEST_READY ───────────────────────────────────
     preselected = db.query(models.Application).filter(
         models.Application.job_id    == payload.job_id,
         models.Application.status_v2 == "PRESELECTED",
@@ -364,7 +427,7 @@ def validate_test(
 
     if not preselected:
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail=(
                 "Aucun candidat en statut PRESELECTED pour ce job. "
                 "Le pipeline de matching doit être terminé avant de valider le test."

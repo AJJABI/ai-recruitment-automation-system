@@ -59,8 +59,14 @@ def create_job(
 
 @router.get("/")
 def get_jobs(db: Session = Depends(get_db)):
-    """Retourne uniquement les jobs ouverts (closed_at IS NULL)."""
-    return db.query(models.Job).filter(models.Job.closed_at == None).all()
+    """Retourne uniquement les jobs ouverts et non expirés (closed_at IS NULL, date_expiration NULL ou future)."""
+    from datetime import datetime
+    from sqlalchemy import or_
+    now = datetime.utcnow()
+    return db.query(models.Job).filter(
+        models.Job.closed_at == None,
+        or_(models.Job.date_expiration == None, models.Job.date_expiration >= now),
+    ).all()
 
 
 # ============================================================
