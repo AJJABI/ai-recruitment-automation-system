@@ -115,7 +115,6 @@ function TopBar({ notifs, onMarkRead, onMarkAllRead }: {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <img src={logoImg} alt="logo" style={{ height: 36, animation: "floatLogo 3s ease-in-out infinite" }} />
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: "#1c2a38", margin: 0, letterSpacing: "-0.02em" }}>
             Open Positions

@@ -342,7 +342,7 @@ export function Topbar({ path }: TopbarProps) {
           className="text-[11px] font-mono tracking-[0.18em]"
           style={{ color: "rgba(255,255,255,0.88)" }}
         >
-          DYNAMIX · AI RECRUITMENT
+          AI Recruitment System
         </span>
       </div>
 

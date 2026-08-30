@@ -182,9 +182,7 @@ export default function ForgotPasswordPage() {
           }} />
 
           <div style={{ position: "relative", zIndex: 2, maxWidth: 380 }}>
-            <div className="logo-float" style={{ marginBottom: 28 }}>
-              <img src={logoImg} alt="Dynamix" style={{ width: 72, height: 72, objectFit: "contain" }} />
-            </div>
+           
 
             <div style={{ fontSize: 42, fontWeight: 800, color: "#ffffff", lineHeight: 1.1, letterSpacing: "-0.025em", marginBottom: 8 }}>
               Reset your<br />password

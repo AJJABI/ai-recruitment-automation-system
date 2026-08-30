@@ -561,7 +561,7 @@ export default function RHCandidateReport() {
           {/* Topbar dans le hero */}
           <div style={{ position: "relative", zIndex: 1, padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f0ecfc" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <img src={logoImg} alt="logo" style={{ height: 30 }} />
+              
               <div style={{ width: 1, height: 18, background: "#e2e8f0" }} />
               <Link href={`/rh/ranking/${jobId}`} style={{ textDecoration: "none" }}>
                 <motion.div whileHover={{ x: -2 }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#1e293b", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>

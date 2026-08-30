@@ -249,7 +249,7 @@ export default function ResetPasswordPage() {
                                 background: "linear-gradient(to bottom, #7c3aed, #a78bfa)",
                             }} />
                             <p style={{ fontSize: 14, color: "#94a3b8", lineHeight: 1.7 }}>
-                                Choose a new secure password for your <strong style={{ color: "#a78bfa" }}>Dynamix Services</strong> account. This link is valid for 1 hour and can only be used once.
+                                Choose a new secure password for your <strong style={{ color: "#a78bfa" }}>AI Recruitment System</strong> account. This link is valid for 1 hour and can only be used once.
                             </p>
                         </div>
 

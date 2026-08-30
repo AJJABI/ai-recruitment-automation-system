@@ -428,12 +428,9 @@ export default function ManagerAccount() {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <img src={logoImg} alt="Dynamix Services" style={{
-                  width: 45, height: 45, objectFit: "contain",
-                  animation: "floatLogo 2.4s ease-in-out infinite",
-                }} />
+               
                 <span style={{ fontSize: 30, fontWeight: 800, color: "#1c2a38", letterSpacing: "-0.02em" }}>
-                  Dynamix Services
+                  AI Recruitment System
                 </span>
               </div>
               <div style={{

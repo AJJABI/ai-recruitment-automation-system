@@ -299,18 +299,15 @@ export default function LoginPage() {
 
           <div style={{ position: "relative", zIndex: 2 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginBottom: 32 }}>
-              <div className="logo-enter">
-                <img src={logoImg} alt="Dynamix" style={{ width: 100, height: 100, objectFit: "contain" }} />
-              </div>
+             
               <div className="shadow-breathe" style={{ width: 70, height: 12, marginTop: -6, borderRadius: "50%", background: "radial-gradient(ellipse, rgba(0,0,0,0.55) 0%, transparent 70%)" }} />
             </div>
             <div className="brand-slide">
-              <div style={{ fontSize: 52, fontWeight: 800, color: "#ffffff", lineHeight: 1, letterSpacing: "-0.025em" }}>Dynamix</div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: "#f97316", letterSpacing: "0.14em", marginTop: 2 }}>services</div>
+              <div style={{ fontSize: 52, fontWeight: 800, color: "#ffffff", lineHeight: 1, letterSpacing: "-0.025em" }}>AI Recruitment System</div>
               <div style={{ marginTop: 20, display: "flex", gap: 10, alignItems: "flex-start", maxWidth: 320 }}>
                 <div style={{ width: 3, height: 38, borderRadius: 2, flexShrink: 0, marginTop: 2, background: "linear-gradient(to bottom, #7c3aed, #a78bfa)" }} />
                 <p style={{ fontSize: 14, color: "#a78bfa", lineHeight: 1.65, fontWeight: 400 }}>
-                  <TypewriterOnce text="Dynamix Services internal platform — access restricted to employees." speed={55} />
+                  <TypewriterOnce text="AI-Powered Recruitment & Candidate Assessment" speed={55} />
                 </p>
               </div>
             </div>

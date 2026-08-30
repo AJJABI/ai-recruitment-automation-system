@@ -179,7 +179,7 @@ export default function CreateJob() {
 
   // Form state
   const [title,          setTitle]          = useState("");
-  const [company,        setCompany]        = useState("Dynamix Services");
+  const [company,        setCompany]        = useState("AI Recruitment System");
   const [department,     setDepartment]     = useState("");
   const [location,       setLocation]       = useState("Bizerte - Tunisia");
   const [level,          setLevel]          = useState("Mid");
@@ -305,10 +305,7 @@ export default function CreateJob() {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <img
-                  src={logoImg} alt="Dynamix"
-                  style={{ width: 45, height: 45, objectFit: "contain", animation: "floatLogo 2.4s ease-in-out infinite" }}
-                />
+                
                 <div>
                   <h1 style={{ fontSize: 26, fontWeight: 700, color: "#1c2a38", margin: 0, lineHeight: 1.1 }}>
                     Create a new job
@@ -395,7 +392,7 @@ export default function CreateJob() {
                 <Field label="Company">
                   <input
                     style={inputStyle}
-                    placeholder="Dynamix Services"
+                    placeholder="AI Recruitment System"
                     value={company}
                     disabled
                     onChange={e => setCompany(e.target.value)}

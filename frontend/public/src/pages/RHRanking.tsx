@@ -156,7 +156,6 @@ function TopBar({ jobId, jobTitle, notifs, onMarkRead, onMarkAllRead, onElargir,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <img src={logoImg} alt="logo" style={{ height: 36, animation: "floatLogo 3s ease-in-out infinite" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {/* Back button */}
           <Link href="/rh/ranking" style={{ textDecoration: "none" }}>

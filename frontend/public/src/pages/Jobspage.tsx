@@ -264,7 +264,6 @@ export default function JobsPage() {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <img src={logoImg} alt="Dynamix" style={{ width: 45, height: 45, objectFit: "contain", animation: "floatLogo 2.4s ease-in-out infinite" }} />
                 <div>
                   <h1 style={{ fontSize: 28, fontWeight: 700, color: "#1c2a38", margin: 0, lineHeight: 1.1 }}>Jobs Management</h1>
                   <p style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.18em", margin: "4px 0 0", textTransform: "uppercase" }}>{dateLabel}</p>

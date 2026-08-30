@@ -431,26 +431,9 @@ function TopBar({ dateLabel, kpis, notifs, onMarkRead, onMarkAllRead, onNavigate
       }}>
         {/* Company name + animated logo */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            width: 44,
-            height: 45,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}>
-            <img
-              src={logoImg}
-              alt="Dynamix Services"
-              style={{
-                width: 45,
-                height: 45,
-                objectFit: "contain",
-                animation: "floatLogo 2.4s ease-in-out infinite",
-              }}
-            />
-          </div>
+          
           <span style={{ fontSize: 30, fontWeight: 800, color: "#1c2a38", letterSpacing: "-0.02em" }}>
-            Dynamix Services
+            AI Recruitment System
           </span>
         </div>
 

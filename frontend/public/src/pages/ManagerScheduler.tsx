@@ -543,11 +543,7 @@ export default function ManagerScheduler() {
               justifyContent: "space-between", marginBottom: 20,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <img
-                  src={logoImg}
-                  alt="Dynamix Services"
-                  style={{ width: 45, height: 45, objectFit: "contain", animation: "floatLogo 2.4s ease-in-out infinite" }}
-                />
+                
                 <h1 style={{ fontSize: 28, fontWeight: 700, color: "#1c2a38", margin: 0, lineHeight: 1.1 }}>
                   Interviews
                 </h1>

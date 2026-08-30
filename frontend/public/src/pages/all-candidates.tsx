@@ -1,8 +1,4 @@
-/**
- * AllCandidates.tsx — /candidates
- * Thème Dashboard : sidebar pill violette flottante + background wave
- * ⚠️ Aucune modification backend — uniquement le rendu visuel.
- */
+
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -292,10 +288,7 @@ export default function AllCandidates() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               {/* Logo + page title */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <img
-                  src={logoImg} alt="Dynamix Services"
-                  style={{ width: 45, height: 45, objectFit: "contain", animation: "floatLogo 2.4s ease-in-out infinite" }}
-                />
+                
                 <h1 style={{ fontSize: 28, fontWeight: 700, color: TEXT_MAIN, margin: 0, lineHeight: 1.1 }}>
                   Jobs Applied
                 </h1>
